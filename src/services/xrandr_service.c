@@ -90,6 +90,69 @@ static double clamp_unit(double value) {
     return value;
 }
 
+static gboolean is_hour_in_range(int hour, int start_hour, int end_hour) {
+    if (start_hour == end_hour) {
+        return TRUE;
+    }
+    if (start_hour < end_hour) {
+        return hour >= start_hour && hour < end_hour;
+    }
+    return hour >= start_hour || hour < end_hour;
+}
+
+static gboolean should_enable_night_light(const DcDisplayEditConfig *config) {
+    GDateTime *now;
+    int hour;
+    gboolean enabled;
+
+    if (!config->night_light_enabled) {
+        return FALSE;
+    }
+
+    if (g_strcmp0(config->night_light_schedule, "always") == 0) {
+        return TRUE;
+    }
+
+    now = g_date_time_new_now_local();
+    hour = g_date_time_get_hour(now);
+
+    if (g_strcmp0(config->night_light_schedule, "custom") == 0) {
+        enabled = is_hour_in_range(hour,
+                                   config->night_light_custom_start_hour,
+                                   config->night_light_custom_end_hour);
+        g_date_time_unref(now);
+        return enabled;
+    }
+
+    enabled = is_hour_in_range(hour, 18, 7);
+    g_date_time_unref(now);
+    return enabled;
+}
+
+static double compute_brightness_scale(const DcDisplayEditConfig *config) {
+    GDateTime *now;
+    int hour;
+    double scale;
+
+    if (!config->adaptive_brightness) {
+        return 1.0;
+    }
+
+    now = g_date_time_new_now_local();
+    hour = g_date_time_get_hour(now);
+
+    if (hour >= 23 || hour < 6) {
+        scale = 0.72;
+    } else if (hour >= 19 || hour < 8) {
+        scale = 0.84;
+    } else {
+        scale = 1.0;
+    }
+
+    g_date_time_unref(now);
+    return scale;
+}
+
 static void kelvin_to_rgb_scale(int temperature, double *red, double *green, double *blue) {
     double temp;
     double red_value;
@@ -123,7 +186,9 @@ static gboolean apply_gamma_to_output(Display *display,
                                       double red_scale,
                                       double green_scale,
                                       double blue_scale,
-                                      double gamma_value) {
+                                      double gamma_value,
+                                      double brightness_scale,
+                                      double vibrance_amount) {
     int gamma_size;
     XRRCrtcGamma *gamma;
     int i;
@@ -148,12 +213,20 @@ static gboolean apply_gamma_to_output(Display *display,
         double red_value;
         double green_value;
         double blue_value;
+        double luminance;
 
         normalized = gamma_size == 1 ? 1.0 : (double) i / (double) (gamma_size - 1);
         corrected = pow(normalized, 1.0 / MAX(gamma_value, 0.1));
-        red_value = corrected * red_scale;
-        green_value = corrected * green_scale;
-        blue_value = corrected * blue_scale;
+        red_value = corrected * red_scale * brightness_scale;
+        green_value = corrected * green_scale * brightness_scale;
+        blue_value = corrected * blue_scale * brightness_scale;
+
+        if (vibrance_amount > 0.0) {
+            luminance = (red_value * 0.2126) + (green_value * 0.7152) + (blue_value * 0.0722);
+            red_value = luminance + ((red_value - luminance) * vibrance_amount);
+            green_value = luminance + ((green_value - luminance) * vibrance_amount);
+            blue_value = luminance + ((blue_value - luminance) * vibrance_amount);
+        }
 
         gamma->red[i] = (gushort) (CLAMP(red_value, 0.0, 1.0) * 65535.0);
         gamma->green[i] = (gushort) (CLAMP(green_value, 0.0, 1.0) * 65535.0);
@@ -422,6 +495,8 @@ gboolean dc_xrandr_service_apply_display_edit(DcXrandrService *service,
     double red_scale;
     double green_scale;
     double blue_scale;
+    double brightness_scale;
+    double vibrance_amount;
     int i;
 
     if (service == NULL || config == NULL) {
@@ -438,7 +513,9 @@ gboolean dc_xrandr_service_apply_display_edit(DcXrandrService *service,
     red_scale = 1.0;
     green_scale = 1.0;
     blue_scale = 1.0;
-    if (config->night_light_enabled) {
+    brightness_scale = compute_brightness_scale(config);
+    vibrance_amount = 1.0 + ((double) config->vibrance / 100.0);
+    if (should_enable_night_light(config)) {
         kelvin_to_rgb_scale(config->night_light_temperature, &red_scale, &green_scale, &blue_scale);
     }
 
@@ -462,9 +539,11 @@ gboolean dc_xrandr_service_apply_display_edit(DcXrandrService *service,
                                        red_scale,
                                        green_scale,
                                        blue_scale,
-                                       config->gamma)) {
+                                       config->gamma,
+                                       brightness_scale,
+                                       vibrance_amount)) {
                 success = FALSE;
-                g_string_append_printf(errors, "%s: failed to apply gamma/night light.\n", output_info->name);
+                g_string_append_printf(errors, "%s: failed to apply display edit adjustments.\n", output_info->name);
             }
         }
 
@@ -479,5 +558,17 @@ gboolean dc_xrandr_service_apply_display_edit(DcXrandrService *service,
     }
 
     g_string_free(errors, TRUE);
+    return success;
+}
+
+gboolean dc_xrandr_service_reset_display_edit(DcXrandrService *service,
+                                              char **error_message) {
+    DcDisplayEditConfig *config;
+    gboolean success;
+
+    config = dc_display_edit_config_new();
+    config->vibrance = 0;
+    success = dc_xrandr_service_apply_display_edit(service, config, error_message);
+    dc_display_edit_config_free(config);
     return success;
 }

@@ -5,6 +5,8 @@ struct _DcDisplayEditPage {
     GtkWidget *night_light_switch;
     GtkWidget *night_light_temperature_scale;
     GtkWidget *night_light_schedule_combo;
+    GtkWidget *night_light_custom_start_spin;
+    GtkWidget *night_light_custom_end_spin;
     GtkWidget *adaptive_brightness_switch;
     GtkWidget *gamma_scale;
     GtkWidget *vibrance_scale;
@@ -174,6 +176,8 @@ DcDisplayEditPage *dc_display_edit_page_new(void) {
     GtkWidget *night_box;
     GtkWidget *display_card;
     GtkWidget *display_box;
+    GtkAdjustment *custom_start_adjustment;
+    GtkAdjustment *custom_end_adjustment;
     GtkWidget *scales[3];
     int i;
 
@@ -196,6 +200,10 @@ DcDisplayEditPage *dc_display_edit_page_new(void) {
     page->night_light_switch = gtk_switch_new();
     page->night_light_temperature_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 2500.0, 6500.0, 100.0);
     page->night_light_schedule_combo = gtk_combo_box_text_new();
+    custom_start_adjustment = gtk_adjustment_new(21.0, 0.0, 23.0, 1.0, 1.0, 0.0);
+    custom_end_adjustment = gtk_adjustment_new(6.0, 0.0, 23.0, 1.0, 1.0, 0.0);
+    page->night_light_custom_start_spin = gtk_spin_button_new(GTK_ADJUSTMENT(custom_start_adjustment), 1.0, 0);
+    page->night_light_custom_end_spin = gtk_spin_button_new(GTK_ADJUSTMENT(custom_end_adjustment), 1.0, 0);
 
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->night_light_schedule_combo), "sunset", "Sunset to Sunrise");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->night_light_schedule_combo), "custom", "Custom Schedule");
@@ -237,6 +245,18 @@ DcDisplayEditPage *dc_display_edit_page_new(void) {
     gtk_box_pack_start(GTK_BOX(night_box), create_setting_row("Schedule",
                                                               "Choose when the warm color profile should turn on automatically.",
                                                               page->night_light_schedule_combo),
+                       FALSE,
+                       FALSE,
+                       0);
+    gtk_box_pack_start(GTK_BOX(night_box), create_setting_row("Custom Start Hour",
+                                                              "Used when Schedule is set to Custom Schedule. Format is 24-hour local time.",
+                                                              page->night_light_custom_start_spin),
+                       FALSE,
+                       FALSE,
+                       0);
+    gtk_box_pack_start(GTK_BOX(night_box), create_setting_row("Custom End Hour",
+                                                              "Used when Schedule is set to Custom Schedule. Crossing midnight is supported.",
+                                                              page->night_light_custom_end_spin),
                        FALSE,
                        FALSE,
                        0);
@@ -286,6 +306,14 @@ GtkWidget *dc_display_edit_page_get_night_light_temperature_scale(DcDisplayEditP
 
 GtkWidget *dc_display_edit_page_get_night_light_schedule_combo(DcDisplayEditPage *page) {
     return page->night_light_schedule_combo;
+}
+
+GtkWidget *dc_display_edit_page_get_night_light_custom_start_spin(DcDisplayEditPage *page) {
+    return page->night_light_custom_start_spin;
+}
+
+GtkWidget *dc_display_edit_page_get_night_light_custom_end_spin(DcDisplayEditPage *page) {
+    return page->night_light_custom_end_spin;
 }
 
 GtkWidget *dc_display_edit_page_get_adaptive_brightness_switch(DcDisplayEditPage *page) {

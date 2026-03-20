@@ -21,5 +21,7 @@ gboolean dc_xrandr_service_apply_configs(DcXrandrService *service,
 gboolean dc_xrandr_service_apply_display_edit(DcXrandrService *service,
                                               const DcDisplayEditConfig *config,
                                               char **error_message);
+gboolean dc_xrandr_service_reset_display_edit(DcXrandrService *service,
+                                              char **error_message);
 
 #endif
