@@ -2,39 +2,173 @@
 
 struct _DcWindowManagerPage {
     GtkWidget *root;
+    GtkWidget *floating_mode_switch;
+    GtkWidget *snap_to_edge_switch;
+    GtkWidget *snap_threshold_scale;
+    GtkWidget *snap_show_preview_switch;
+    GtkWidget *layout_combo;
+    GtkWidget *border_width_scale;
+    GtkWidget *focused_border_color_entry;
+    GtkWidget *normal_border_color_entry;
+    GtkWidget *window_gap_scale;
+    GtkWidget *top_padding_scale;
+    GtkWidget *bottom_padding_scale;
+    GtkWidget *focus_opacity_switch;
+    GtkWidget *inactive_opacity_scale;
+    GtkWidget *active_opacity_scale;
 };
+
+static const char *WINDOW_MANAGER_CSS =
+    ".wm-scroll-hidden scrollbar {"
+    "  opacity: 0;"
+    "  min-width: 0;"
+    "  min-height: 0;"
+    "}"
+    ".wm-scroll-hidden scrollbar slider {"
+    "  min-width: 0;"
+    "  min-height: 0;"
+    "}"
+    ".wm-shell {"
+    "  padding: 20px 18px 48px;"
+    "}"
+    ".wm-card {"
+    "  background-color: rgba(14,14,14,0.72);"
+    "  border: 1px solid rgba(255,255,255,0.10);"
+    "  border-radius: 18px;"
+    "}"
+    ".wm-group-label {"
+    "  color: rgba(255,255,255,0.28);"
+    "  font-size: 10px;"
+    "  font-weight: 700;"
+    "  letter-spacing: 0.09em;"
+    "  padding: 10px 18px 2px;"
+    "}"
+    ".wm-row {"
+    "  padding: 10px 18px;"
+    "  border-bottom: 1px solid rgba(255,255,255,0.05);"
+    "}"
+    ".wm-setting-title {"
+    "  color: rgba(255,255,255,0.92);"
+    "  font-size: 13px;"
+    "  font-weight: 600;"
+    "}"
+    ".wm-setting-desc {"
+    "  color: rgba(255,255,255,0.45);"
+    "  font-size: 11.5px;"
+    "}"
+    "switch {"
+    "  background-color: rgba(255,255,255,0.12);"
+    "  border: 1px solid rgba(255,255,255,0.08);"
+    "  border-radius: 999px;"
+    "  min-width: 42px;"
+    "  min-height: 22px;"
+    "}"
+    "switch:checked {"
+    "  background-color: rgba(255,255,255,0.32);"
+    "  border-color: rgba(255,255,255,0.22);"
+    "}"
+    "switch slider {"
+    "  min-width: 16px;"
+    "  min-height: 16px;"
+    "  border-radius: 50%;"
+    "  background-color: rgba(255,255,255,0.95);"
+    "  margin: 2px;"
+    "}"
+    "scale trough {"
+    "  min-height: 4px;"
+    "  border-radius: 2px;"
+    "  background-color: rgba(255,255,255,0.13);"
+    "}"
+    "scale trough highlight {"
+    "  background-color: rgba(255,255,255,0.50);"
+    "  border-radius: 2px;"
+    "}"
+    "scale trough slider {"
+    "  min-width: 16px;"
+    "  min-height: 16px;"
+    "  border-radius: 50%;"
+    "  background-color: rgba(255,255,255,0.92);"
+    "  border: none;"
+    "}"
+    "scale value {"
+    "  color: rgba(255,255,255,0.38);"
+    "  font-size: 11px;"
+    "  min-width: 26px;"
+    "}"
+    "combobox button {"
+    "  background-color: rgba(255,255,255,0.08);"
+    "  background-image: none;"
+    "  border: 1px solid rgba(255,255,255,0.12);"
+    "  border-radius: 10px;"
+    "  padding: 6px 10px;"
+    "  color: rgba(255,255,255,0.90);"
+    "  font-size: 12px;"
+    "}"
+    "combobox button:hover {"
+    "  background-color: rgba(255,255,255,0.14);"
+    "}"
+    "entry {"
+    "  background-color: rgba(255,255,255,0.08);"
+    "  background-image: none;"
+    "  border: 1px solid rgba(255,255,255,0.12);"
+    "  border-radius: 10px;"
+    "  padding: 7px 12px;"
+    "  color: rgba(255,255,255,0.92);"
+    "  font-size: 12px;"
+    "}"
+    "entry:focus {"
+    "  border-color: rgba(255,255,255,0.30);"
+    "  background-color: rgba(255,255,255,0.11);"
+    "}";
+
+static void on_realize(GtkWidget *widget, gpointer user_data) {
+    GtkCssProvider *provider;
+
+    (void) user_data;
+
+    provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(provider, WINDOW_MANAGER_CSS, -1, NULL);
+    gtk_style_context_add_provider_for_screen(gtk_widget_get_screen(widget),
+                                              GTK_STYLE_PROVIDER(provider),
+                                              GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(provider);
+}
 
 static void add_css_class(GtkWidget *widget, const char *class_name) {
     gtk_style_context_add_class(gtk_widget_get_style_context(widget), class_name);
 }
 
-static GtkWidget *create_section_heading(const char *title, const char *subtitle) {
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    GtkWidget *title_label = gtk_label_new(title);
-    GtkWidget *subtitle_label = gtk_label_new(subtitle);
+static GtkWidget *create_group_label(const char *text) {
+    GtkWidget *label;
 
-    gtk_widget_set_halign(title_label, GTK_ALIGN_START);
-    gtk_widget_set_halign(subtitle_label, GTK_ALIGN_START);
-    add_css_class(title_label, "page-title");
-    add_css_class(subtitle_label, "page-subtitle");
-
-    gtk_box_pack_start(GTK_BOX(box), title_label, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(box), subtitle_label, FALSE, FALSE, 0);
-    return box;
+    label = gtk_label_new(text);
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    add_css_class(label, "wm-group-label");
+    return label;
 }
 
-static GtkWidget *create_setting_row(const char *title, const char *description, GtkWidget *control) {
-    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    GtkWidget *text_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    GtkWidget *title_label = gtk_label_new(title);
-    GtkWidget *description_label = gtk_label_new(description);
+static GtkWidget *create_setting_row(const char *title,
+                                     const char *description,
+                                     GtkWidget *control) {
+    GtkWidget *row;
+    GtkWidget *text_box;
+    GtkWidget *title_label;
+    GtkWidget *description_label;
+
+    row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    text_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    title_label = gtk_label_new(title);
+    description_label = gtk_label_new(description);
 
     gtk_widget_set_halign(title_label, GTK_ALIGN_START);
     gtk_widget_set_halign(description_label, GTK_ALIGN_START);
     gtk_widget_set_hexpand(text_box, TRUE);
     gtk_label_set_line_wrap(GTK_LABEL(description_label), TRUE);
-    add_css_class(title_label, "setting-title");
-    add_css_class(description_label, "setting-description");
+    gtk_widget_set_valign(control, GTK_ALIGN_CENTER);
+
+    add_css_class(title_label, "wm-setting-title");
+    add_css_class(description_label, "wm-setting-desc");
+    add_css_class(row, "wm-row");
 
     gtk_box_pack_start(GTK_BOX(text_box), title_label, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(text_box), description_label, FALSE, FALSE, 0);
@@ -43,69 +177,215 @@ static GtkWidget *create_setting_row(const char *title, const char *description,
     return row;
 }
 
-static GtkWidget *create_card(const char *title, const char *subtitle) {
-    GtkWidget *frame = gtk_frame_new(NULL);
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
+static GtkWidget *create_card(void) {
+    GtkWidget *frame;
+    GtkWidget *outer_box;
+
+    frame = gtk_frame_new(NULL);
+    outer_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 
     gtk_frame_set_shadow_type(GTK_FRAME(frame), GTK_SHADOW_NONE);
     gtk_container_set_border_width(GTK_CONTAINER(frame), 0);
-    add_css_class(frame, "panel-card");
-    gtk_container_add(GTK_CONTAINER(frame), box);
-    gtk_box_pack_start(GTK_BOX(box), create_section_heading(title, subtitle), FALSE, FALSE, 0);
+    add_css_class(frame, "wm-card");
+    gtk_container_add(GTK_CONTAINER(frame), outer_box);
     return frame;
 }
 
 DcWindowManagerPage *dc_window_manager_page_new(void) {
-    DcWindowManagerPage *page = g_new0(DcWindowManagerPage, 1);
-    GtkWidget *content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 16);
-    GtkWidget *scroller = gtk_scrolled_window_new(NULL, NULL);
-    GtkWidget *card = create_card("Core Behavior", "These controls are placeholders for the next implementation pass.");
-    GtkWidget *card_box = gtk_bin_get_child(GTK_BIN(card));
-    GtkWidget *smart_focus = gtk_switch_new();
-    GtkWidget *edge_snap = gtk_switch_new();
-    GtkWidget *workspace_combo = gtk_combo_box_text_new();
+    DcWindowManagerPage *page;
+    GtkWidget *content;
+    GtkWidget *scroller;
+    GtkWidget *behavior_card;
+    GtkWidget *behavior_box;
+    GtkWidget *style_card;
+    GtkWidget *style_box;
+    GtkWidget *scales[8];
+    int i;
 
-    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(workspace_combo), "Static Workspaces");
-    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(workspace_combo), "Dynamic Workspaces");
-    gtk_combo_box_set_active(GTK_COMBO_BOX(workspace_combo), 0);
+    page = g_new0(DcWindowManagerPage, 1);
+    content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
+    scroller = gtk_scrolled_window_new(NULL, NULL);
 
-    add_css_class(content, "page-shell");
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    add_css_class(content, "wm-shell");
+    add_css_class(scroller, "wm-scroll-hidden");
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller),
+                                   GTK_POLICY_NEVER,
+                                   GTK_POLICY_AUTOMATIC);
     gtk_scrolled_window_set_overlay_scrolling(GTK_SCROLLED_WINDOW(scroller), TRUE);
     gtk_container_add(GTK_CONTAINER(scroller), content);
+    g_signal_connect(scroller, "realize", G_CALLBACK(on_realize), NULL);
 
-    gtk_box_pack_start(GTK_BOX(content),
-                       create_section_heading("Window Manager",
-                                              "Prepare tiling, focus, borders, and workspace behavior from one place."),
-                       FALSE,
-                       FALSE,
-                       0);
-    gtk_box_pack_start(GTK_BOX(card_box),
-                       create_setting_row("Smart Focus",
-                                          "Focus the next relevant window automatically when the active window closes or moves.",
-                                          smart_focus),
-                       FALSE,
-                       FALSE,
-                       0);
-    gtk_box_pack_start(GTK_BOX(card_box),
-                       create_setting_row("Edge Snap",
-                                          "Snap windows cleanly against screen edges and neighboring windows.",
-                                          edge_snap),
-                       FALSE,
-                       FALSE,
-                       0);
-    gtk_box_pack_start(GTK_BOX(card_box),
-                       create_setting_row("Workspace Model",
-                                          "Choose how workspaces should be created and managed.",
-                                          workspace_combo),
-                       FALSE,
-                       FALSE,
-                       0);
-    gtk_box_pack_start(GTK_BOX(content), card, FALSE, FALSE, 0);
+    behavior_card = create_card();
+    behavior_box = gtk_bin_get_child(GTK_BIN(behavior_card));
+    page->floating_mode_switch = gtk_switch_new();
+    page->snap_to_edge_switch = gtk_switch_new();
+    page->snap_threshold_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 80.0, 1.0);
+    page->snap_show_preview_switch = gtk_switch_new();
+    page->layout_combo = gtk_combo_box_text_new();
+    page->window_gap_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 64.0, 1.0);
+    page->top_padding_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 128.0, 1.0);
+    page->bottom_padding_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 128.0, 1.0);
+
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->layout_combo), "tiled", "tiled");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->layout_combo), "monocle", "monocle");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->layout_combo), "tall", "tall");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->layout_combo), "rtall", "rtall");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->layout_combo), "wide", "wide");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->layout_combo), "rwide", "rwide");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->layout_combo), "grid", "grid");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->layout_combo), "rgrid", "rgrid");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->layout_combo), "even", "even");
+    gtk_combo_box_set_active_id(GTK_COMBO_BOX(page->layout_combo), "tiled");
+
+    style_card = create_card();
+    style_box = gtk_bin_get_child(GTK_BIN(style_card));
+    page->border_width_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 12.0, 1.0);
+    page->focused_border_color_entry = gtk_entry_new();
+    page->normal_border_color_entry = gtk_entry_new();
+    page->focus_opacity_switch = gtk_switch_new();
+    page->inactive_opacity_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.10, 1.00, 0.01);
+    page->active_opacity_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.10, 1.00, 0.01);
+
+    gtk_entry_set_placeholder_text(GTK_ENTRY(page->focused_border_color_entry), "#5e81ac");
+    gtk_entry_set_placeholder_text(GTK_ENTRY(page->normal_border_color_entry), "#3b4252");
+
+    scales[0] = page->snap_threshold_scale;
+    scales[1] = page->window_gap_scale;
+    scales[2] = page->top_padding_scale;
+    scales[3] = page->bottom_padding_scale;
+    scales[4] = page->border_width_scale;
+    scales[5] = page->inactive_opacity_scale;
+    scales[6] = page->active_opacity_scale;
+    scales[7] = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 1.0, 1.0);
+    for (i = 0; i < 7; i++) {
+        gtk_widget_set_size_request(scales[i], 160, -1);
+        gtk_widget_set_hexpand(scales[i], FALSE);
+        gtk_scale_set_draw_value(GTK_SCALE(scales[i]), TRUE);
+    }
+
+    gtk_range_set_value(GTK_RANGE(page->snap_threshold_scale), 20.0);
+    gtk_range_set_value(GTK_RANGE(page->window_gap_scale), 10.0);
+    gtk_range_set_value(GTK_RANGE(page->top_padding_scale), 30.0);
+    gtk_range_set_value(GTK_RANGE(page->bottom_padding_scale), 0.0);
+    gtk_range_set_value(GTK_RANGE(page->border_width_scale), 2.0);
+    gtk_range_set_value(GTK_RANGE(page->inactive_opacity_scale), 0.85);
+    gtk_range_set_value(GTK_RANGE(page->active_opacity_scale), 1.0);
+    gtk_entry_set_text(GTK_ENTRY(page->focused_border_color_entry), "#5e81ac");
+    gtk_entry_set_text(GTK_ENTRY(page->normal_border_color_entry), "#3b4252");
+
+    gtk_box_pack_start(GTK_BOX(behavior_box), create_group_label("BEHAVIOR"), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(behavior_box), create_setting_row("Floating Mode",
+                                                                 "Enable PoisonBlade floating mode for free window movement.",
+                                                                 page->floating_mode_switch), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(behavior_box), create_setting_row("Snap To Edge",
+                                                                 "Snap windows to monitor edges and nearby windows.",
+                                                                 page->snap_to_edge_switch), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(behavior_box), create_setting_row("Snap Threshold",
+                                                                 "Control edge snap sensitivity in pixels.",
+                                                                 page->snap_threshold_scale), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(behavior_box), create_setting_row("Snap Preview",
+                                                                 "Show preview feedback while snapping floating windows.",
+                                                                 page->snap_show_preview_switch), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(behavior_box), create_setting_row("Desktop Layout",
+                                                                 "Set the current PoisonBlade desktop layout.",
+                                                                 page->layout_combo), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(behavior_box), create_setting_row("Window Gap",
+                                                                 "Set the gap between managed windows.",
+                                                                 page->window_gap_scale), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(behavior_box), create_setting_row("Top Padding",
+                                                                 "Reserve space for the top panel or shell chrome.",
+                                                                 page->top_padding_scale), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(behavior_box), create_setting_row("Bottom Padding",
+                                                                 "Reserve space at the bottom of the work area.",
+                                                                 page->bottom_padding_scale), FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(style_box), create_group_label("BORDERS & OPACITY"), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(style_box), create_setting_row("Border Width",
+                                                              "Set the border width used by managed windows.",
+                                                              page->border_width_scale), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(style_box), create_setting_row("Focused Border Color",
+                                                              "Hex color applied to the focused window border.",
+                                                              page->focused_border_color_entry), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(style_box), create_setting_row("Normal Border Color",
+                                                              "Hex color applied to unfocused window borders.",
+                                                              page->normal_border_color_entry), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(style_box), create_setting_row("Focus Opacity Mode",
+                                                              "Use active and inactive opacity values for focus transitions.",
+                                                              page->focus_opacity_switch), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(style_box), create_setting_row("Inactive Opacity",
+                                                              "Opacity used for unfocused windows.",
+                                                              page->inactive_opacity_scale), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(style_box), create_setting_row("Active Opacity",
+                                                              "Opacity used for the focused window.",
+                                                              page->active_opacity_scale), FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(content), behavior_card, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(content), style_card, FALSE, FALSE, 0);
 
     page->root = scroller;
     return page;
 }
 
-void dc_window_manager_page_free(DcWindowManagerPage *page) { g_free(page); }
-GtkWidget *dc_window_manager_page_get_widget(DcWindowManagerPage *page) { return page->root; }
+void dc_window_manager_page_free(DcWindowManagerPage *page) {
+    g_free(page);
+}
+
+GtkWidget *dc_window_manager_page_get_widget(DcWindowManagerPage *page) {
+    return page->root;
+}
+
+GtkWidget *dc_window_manager_page_get_floating_mode_switch(DcWindowManagerPage *page) {
+    return page->floating_mode_switch;
+}
+
+GtkWidget *dc_window_manager_page_get_snap_to_edge_switch(DcWindowManagerPage *page) {
+    return page->snap_to_edge_switch;
+}
+
+GtkWidget *dc_window_manager_page_get_snap_threshold_scale(DcWindowManagerPage *page) {
+    return page->snap_threshold_scale;
+}
+
+GtkWidget *dc_window_manager_page_get_snap_show_preview_switch(DcWindowManagerPage *page) {
+    return page->snap_show_preview_switch;
+}
+
+GtkWidget *dc_window_manager_page_get_layout_combo(DcWindowManagerPage *page) {
+    return page->layout_combo;
+}
+
+GtkWidget *dc_window_manager_page_get_border_width_scale(DcWindowManagerPage *page) {
+    return page->border_width_scale;
+}
+
+GtkWidget *dc_window_manager_page_get_focused_border_color_entry(DcWindowManagerPage *page) {
+    return page->focused_border_color_entry;
+}
+
+GtkWidget *dc_window_manager_page_get_normal_border_color_entry(DcWindowManagerPage *page) {
+    return page->normal_border_color_entry;
+}
+
+GtkWidget *dc_window_manager_page_get_window_gap_scale(DcWindowManagerPage *page) {
+    return page->window_gap_scale;
+}
+
+GtkWidget *dc_window_manager_page_get_top_padding_scale(DcWindowManagerPage *page) {
+    return page->top_padding_scale;
+}
+
+GtkWidget *dc_window_manager_page_get_bottom_padding_scale(DcWindowManagerPage *page) {
+    return page->bottom_padding_scale;
+}
+
+GtkWidget *dc_window_manager_page_get_focus_opacity_switch(DcWindowManagerPage *page) {
+    return page->focus_opacity_switch;
+}
+
+GtkWidget *dc_window_manager_page_get_inactive_opacity_scale(DcWindowManagerPage *page) {
+    return page->inactive_opacity_scale;
+}
+
+GtkWidget *dc_window_manager_page_get_active_opacity_scale(DcWindowManagerPage *page) {
+    return page->active_opacity_scale;
+}

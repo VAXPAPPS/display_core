@@ -4,6 +4,7 @@
 #include "services/profile_service.h"
 #include "services/display_edit_service.h"
 #include "services/venom_config_service.h"
+#include "services/window_manager_service.h"
 #include "services/xrandr_service.h"
 #include "ui/output_row.h"
 #include "ui/pages/compositor_page.h"
@@ -30,6 +31,8 @@ typedef struct {
     DcPreviewCanvas *preview;
     guint compositor_autosave_timeout_id;
     gboolean suppress_compositor_autosave;
+    guint window_manager_autosave_timeout_id;
+    gboolean suppress_window_manager_autosave;
     guint display_edit_autosave_timeout_id;
     gboolean suppress_display_edit_autosave;
     guint display_edit_refresh_timeout_id;
@@ -173,6 +176,25 @@ static void apply_display_edit_config_to_ui(DcAppController *app, const DcDispla
     gtk_range_set_value(GTK_RANGE(dc_display_edit_page_get_vibrance_scale(app->display_edit_page)), config->vibrance);
 }
 
+static void apply_window_manager_config_to_ui(DcAppController *app, const DcWindowManagerConfig *config) {
+    gtk_switch_set_active(GTK_SWITCH(dc_window_manager_page_get_floating_mode_switch(app->window_manager_page)), config->floating_mode);
+    gtk_switch_set_active(GTK_SWITCH(dc_window_manager_page_get_snap_to_edge_switch(app->window_manager_page)), config->snap_to_edge);
+    gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_snap_threshold_scale(app->window_manager_page)), config->snap_threshold);
+    gtk_switch_set_active(GTK_SWITCH(dc_window_manager_page_get_snap_show_preview_switch(app->window_manager_page)), config->snap_show_preview);
+    gtk_combo_box_set_active_id(GTK_COMBO_BOX(dc_window_manager_page_get_layout_combo(app->window_manager_page)), config->desktop_layout);
+    gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_border_width_scale(app->window_manager_page)), config->border_width);
+    gtk_entry_set_text(GTK_ENTRY(dc_window_manager_page_get_focused_border_color_entry(app->window_manager_page)),
+                       config->focused_border_color != NULL ? config->focused_border_color : "");
+    gtk_entry_set_text(GTK_ENTRY(dc_window_manager_page_get_normal_border_color_entry(app->window_manager_page)),
+                       config->normal_border_color != NULL ? config->normal_border_color : "");
+    gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_window_gap_scale(app->window_manager_page)), config->window_gap);
+    gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_top_padding_scale(app->window_manager_page)), config->top_padding);
+    gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_bottom_padding_scale(app->window_manager_page)), config->bottom_padding);
+    gtk_switch_set_active(GTK_SWITCH(dc_window_manager_page_get_focus_opacity_switch(app->window_manager_page)), config->focus_opacity);
+    gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_inactive_opacity_scale(app->window_manager_page)), config->inactive_opacity);
+    gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_active_opacity_scale(app->window_manager_page)), config->active_opacity);
+}
+
 static DcVenomConfig *collect_venom_config_from_ui(DcAppController *app) {
     DcVenomConfig *config = dc_venom_config_new();
     const char *blur_method;
@@ -229,6 +251,34 @@ static DcDisplayEditConfig *collect_display_edit_config_from_ui(DcAppController 
     config->adaptive_brightness = gtk_switch_get_active(GTK_SWITCH(dc_display_edit_page_get_adaptive_brightness_switch(app->display_edit_page)));
     config->gamma = gtk_range_get_value(GTK_RANGE(dc_display_edit_page_get_gamma_scale(app->display_edit_page)));
     config->vibrance = (int) gtk_range_get_value(GTK_RANGE(dc_display_edit_page_get_vibrance_scale(app->display_edit_page)));
+    return config;
+}
+
+static DcWindowManagerConfig *collect_window_manager_config_from_ui(DcAppController *app) {
+    DcWindowManagerConfig *config;
+    const char *layout;
+
+    config = dc_window_manager_config_new();
+    config->floating_mode = gtk_switch_get_active(GTK_SWITCH(dc_window_manager_page_get_floating_mode_switch(app->window_manager_page)));
+    config->snap_to_edge = gtk_switch_get_active(GTK_SWITCH(dc_window_manager_page_get_snap_to_edge_switch(app->window_manager_page)));
+    config->snap_threshold = (int) gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_snap_threshold_scale(app->window_manager_page)));
+    config->snap_show_preview = gtk_switch_get_active(GTK_SWITCH(dc_window_manager_page_get_snap_show_preview_switch(app->window_manager_page)));
+    layout = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_window_manager_page_get_layout_combo(app->window_manager_page)));
+    if (layout != NULL) {
+        g_free(config->desktop_layout);
+        config->desktop_layout = g_strdup(layout);
+    }
+    config->border_width = (int) gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_border_width_scale(app->window_manager_page)));
+    g_free(config->focused_border_color);
+    config->focused_border_color = g_strdup(gtk_entry_get_text(GTK_ENTRY(dc_window_manager_page_get_focused_border_color_entry(app->window_manager_page))));
+    g_free(config->normal_border_color);
+    config->normal_border_color = g_strdup(gtk_entry_get_text(GTK_ENTRY(dc_window_manager_page_get_normal_border_color_entry(app->window_manager_page))));
+    config->window_gap = (int) gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_window_gap_scale(app->window_manager_page)));
+    config->top_padding = (int) gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_top_padding_scale(app->window_manager_page)));
+    config->bottom_padding = (int) gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_bottom_padding_scale(app->window_manager_page)));
+    config->focus_opacity = gtk_switch_get_active(GTK_SWITCH(dc_window_manager_page_get_focus_opacity_switch(app->window_manager_page)));
+    config->inactive_opacity = gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_inactive_opacity_scale(app->window_manager_page)));
+    config->active_opacity = gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_active_opacity_scale(app->window_manager_page)));
     return config;
 }
 
@@ -319,6 +369,46 @@ static void on_display_edit_save(DcAppController *app) {
     dc_display_edit_config_free(config);
 }
 
+static void on_window_manager_load(DcAppController *app) {
+    DcWindowManagerConfig *config = NULL;
+    char *error_message = NULL;
+
+    app->suppress_window_manager_autosave = TRUE;
+    if (dc_window_manager_config_load(&config, &error_message)) {
+        apply_window_manager_config_to_ui(app, config);
+        dc_window_manager_apply_config(config, NULL);
+        dc_window_manager_config_free(config);
+        app->suppress_window_manager_autosave = FALSE;
+        return;
+    }
+
+    app->suppress_window_manager_autosave = FALSE;
+    g_warning("%s", error_message != NULL ? error_message : "Failed to load window manager config.");
+    g_free(error_message);
+}
+
+static void on_window_manager_save(DcAppController *app) {
+    DcWindowManagerConfig *config;
+    char *error_message = NULL;
+
+    config = collect_window_manager_config_from_ui(app);
+    if (!dc_window_manager_config_save(config, &error_message)) {
+        g_warning("%s", error_message != NULL ? error_message : "Failed to save window manager config.");
+        g_free(error_message);
+        dc_window_manager_config_free(config);
+        return;
+    }
+
+    g_free(error_message);
+    error_message = NULL;
+    if (!dc_window_manager_apply_config(config, &error_message)) {
+        g_warning("%s", error_message != NULL ? error_message : "Failed to apply PoisonBlade settings.");
+    }
+
+    g_free(error_message);
+    dc_window_manager_config_free(config);
+}
+
 static gboolean refresh_display_edit_runtime(gpointer user_data) {
     DcAppController *app = user_data;
     DcDisplayEditConfig *config;
@@ -336,6 +426,14 @@ static gboolean refresh_display_edit_runtime(gpointer user_data) {
     g_free(error_message);
     dc_display_edit_config_free(config);
     return G_SOURCE_CONTINUE;
+}
+
+static gboolean flush_window_manager_autosave(gpointer user_data) {
+    DcAppController *app = user_data;
+
+    app->window_manager_autosave_timeout_id = 0;
+    on_window_manager_save(app);
+    return G_SOURCE_REMOVE;
 }
 
 static gboolean flush_compositor_autosave(gpointer user_data) {
@@ -382,6 +480,20 @@ static void queue_display_edit_autosave(gpointer user_data) {
     app->display_edit_autosave_timeout_id = g_timeout_add(200, flush_display_edit_autosave, app);
 }
 
+static void queue_window_manager_autosave(gpointer user_data) {
+    DcAppController *app = user_data;
+
+    if (app->suppress_window_manager_autosave) {
+        return;
+    }
+
+    if (app->window_manager_autosave_timeout_id != 0) {
+        g_source_remove(app->window_manager_autosave_timeout_id);
+    }
+
+    app->window_manager_autosave_timeout_id = g_timeout_add(250, flush_window_manager_autosave, app);
+}
+
 static void on_compositor_widget_changed(GtkWidget *widget, gpointer user_data) {
     (void) widget;
     queue_compositor_autosave(user_data);
@@ -402,6 +514,17 @@ static void on_display_edit_switch_active_changed(GObject *object, GParamSpec *p
     (void) object;
     (void) pspec;
     queue_display_edit_autosave(user_data);
+}
+
+static void on_window_manager_widget_changed(GtkWidget *widget, gpointer user_data) {
+    (void) widget;
+    queue_window_manager_autosave(user_data);
+}
+
+static void on_window_manager_switch_active_changed(GObject *object, GParamSpec *pspec, gpointer user_data) {
+    (void) object;
+    (void) pspec;
+    queue_window_manager_autosave(user_data);
 }
 
 static void connect_compositor_autosave_signals(DcAppController *app) {
@@ -435,6 +558,23 @@ static void connect_display_edit_autosave_signals(DcAppController *app) {
     g_signal_connect(dc_display_edit_page_get_adaptive_brightness_switch(app->display_edit_page), "notify::active", G_CALLBACK(on_display_edit_switch_active_changed), app);
     g_signal_connect(dc_display_edit_page_get_gamma_scale(app->display_edit_page), "value-changed", G_CALLBACK(on_display_edit_widget_changed), app);
     g_signal_connect(dc_display_edit_page_get_vibrance_scale(app->display_edit_page), "value-changed", G_CALLBACK(on_display_edit_widget_changed), app);
+}
+
+static void connect_window_manager_autosave_signals(DcAppController *app) {
+    g_signal_connect(dc_window_manager_page_get_floating_mode_switch(app->window_manager_page), "notify::active", G_CALLBACK(on_window_manager_switch_active_changed), app);
+    g_signal_connect(dc_window_manager_page_get_snap_to_edge_switch(app->window_manager_page), "notify::active", G_CALLBACK(on_window_manager_switch_active_changed), app);
+    g_signal_connect(dc_window_manager_page_get_snap_threshold_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
+    g_signal_connect(dc_window_manager_page_get_snap_show_preview_switch(app->window_manager_page), "notify::active", G_CALLBACK(on_window_manager_switch_active_changed), app);
+    g_signal_connect(dc_window_manager_page_get_layout_combo(app->window_manager_page), "changed", G_CALLBACK(on_window_manager_widget_changed), app);
+    g_signal_connect(dc_window_manager_page_get_border_width_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
+    g_signal_connect(dc_window_manager_page_get_focused_border_color_entry(app->window_manager_page), "changed", G_CALLBACK(on_window_manager_widget_changed), app);
+    g_signal_connect(dc_window_manager_page_get_normal_border_color_entry(app->window_manager_page), "changed", G_CALLBACK(on_window_manager_widget_changed), app);
+    g_signal_connect(dc_window_manager_page_get_window_gap_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
+    g_signal_connect(dc_window_manager_page_get_top_padding_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
+    g_signal_connect(dc_window_manager_page_get_bottom_padding_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
+    g_signal_connect(dc_window_manager_page_get_focus_opacity_switch(app->window_manager_page), "notify::active", G_CALLBACK(on_window_manager_switch_active_changed), app);
+    g_signal_connect(dc_window_manager_page_get_inactive_opacity_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
+    g_signal_connect(dc_window_manager_page_get_active_opacity_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
 }
 
 
@@ -1028,9 +1168,11 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_widget_show_all(app->window);
     reload_outputs(app);
     on_display_edit_load(app);
+    on_window_manager_load(app);
     configure_display_edit_capabilities(app);
     on_compositor_load_clicked(NULL, app);
     connect_display_edit_autosave_signals(app);
+    connect_window_manager_autosave_signals(app);
     connect_compositor_autosave_signals(app);
     app->display_edit_refresh_timeout_id = g_timeout_add_seconds(60, refresh_display_edit_runtime, app);
 }
@@ -1074,6 +1216,9 @@ static void dc_app_controller_free(DcAppController *app) {
     }
     if (app->compositor_autosave_timeout_id != 0) {
         g_source_remove(app->compositor_autosave_timeout_id);
+    }
+    if (app->window_manager_autosave_timeout_id != 0) {
+        g_source_remove(app->window_manager_autosave_timeout_id);
     }
     if (app->display_edit_autosave_timeout_id != 0) {
         g_source_remove(app->display_edit_autosave_timeout_id);
