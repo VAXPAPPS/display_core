@@ -3,7 +3,7 @@
 static const char *CUSTOM_HEADERBAR_CSS =
     ".dc-headerbar {"
     "  background:rgba(0, 0, 0, 0);"
-    "  border: none"
+    "  border: none;"
     "  border-radius: 18px;"
     "  padding: 8px 10px 8px 16px;"
     "  min-height: 26px;"

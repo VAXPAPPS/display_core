@@ -300,6 +300,16 @@ static gboolean on_motion(GtkWidget *widget, GdkEventMotion *event, gpointer use
     return TRUE;
 }
 
+static void on_preview_area_destroy(GtkWidget *widget, gpointer user_data) {
+    DcPreviewCanvas *preview = user_data;
+
+    (void) widget;
+
+    preview->area = NULL;
+    preview->rows = NULL;
+    preview->drag_row = NULL;
+}
+
 DcPreviewCanvas *dc_preview_canvas_new(void) {
     DcPreviewCanvas *preview = g_new0(DcPreviewCanvas, 1);
 
@@ -310,6 +320,7 @@ DcPreviewCanvas *dc_preview_canvas_new(void) {
                           GDK_BUTTON_RELEASE_MASK |
                           GDK_POINTER_MOTION_MASK);
 
+    g_signal_connect(preview->area, "destroy", G_CALLBACK(on_preview_area_destroy), preview);
     g_signal_connect(preview->area, "draw", G_CALLBACK(on_draw), preview);
     g_signal_connect(preview->area, "button-press-event", G_CALLBACK(on_button_press), preview);
     g_signal_connect(preview->area, "button-release-event", G_CALLBACK(on_button_release), preview);

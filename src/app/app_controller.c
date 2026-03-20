@@ -1126,7 +1126,11 @@ static void clear_rows(DcAppController *app) {
 
     for (i = 0; i < app->rows->len; i++) {
         DcOutputRow *row = g_ptr_array_index(app->rows, i);
-        gtk_widget_destroy(dc_output_row_get_widget(row));
+        GtkWidget *widget = dc_output_row_get_widget(row);
+
+        if (widget != NULL) {
+            gtk_widget_destroy(widget);
+        }
     }
 
     free_row_list(&app->rows);

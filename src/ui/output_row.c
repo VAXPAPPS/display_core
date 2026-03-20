@@ -87,6 +87,20 @@ static void on_primary_toggled(GtkToggleButton *button, gpointer user_data) {
     notify_changed(row);
 }
 
+static void on_row_frame_destroy(GtkWidget *widget, gpointer user_data) {
+    DcOutputRow *row = user_data;
+
+    (void) widget;
+
+    row->frame = NULL;
+    row->enabled_check = NULL;
+    row->primary_check = NULL;
+    row->mode_combo = NULL;
+    row->rotation_combo = NULL;
+    row->x_spin = NULL;
+    row->y_spin = NULL;
+}
+
 DcOutputRow *dc_output_row_new(DcDisplayOutput *output,
                                DcOutputRowChangedFn on_changed,
                                DcOutputRowPrimaryFn on_primary_selected,
@@ -154,6 +168,7 @@ DcOutputRow *dc_output_row_new(DcDisplayOutput *output,
     gtk_box_pack_start(GTK_BOX(box), build_labeled_row("Position Y", row->y_spin), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(box), row->primary_check, FALSE, FALSE, 0);
 
+    g_signal_connect(row->frame, "destroy", G_CALLBACK(on_row_frame_destroy), row);
     g_signal_connect(row->enabled_check, "toggled", G_CALLBACK(on_enabled_toggled), row);
     g_signal_connect(row->mode_combo, "changed", G_CALLBACK(on_widget_changed), row);
     g_signal_connect(row->rotation_combo, "changed", G_CALLBACK(on_widget_changed), row);
