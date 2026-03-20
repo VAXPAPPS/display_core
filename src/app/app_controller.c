@@ -3,6 +3,7 @@
 #include "domain/display_types.h"
 #include "services/profile_service.h"
 #include "services/display_edit_service.h"
+#include "services/theme_service.h"
 #include "services/venom_config_service.h"
 #include "services/window_manager_service.h"
 #include "services/xrandr_service.h"
@@ -34,6 +35,8 @@ typedef struct {
     DcPreviewCanvas *preview;
     guint compositor_autosave_timeout_id;
     gboolean suppress_compositor_autosave;
+    guint themes_autosave_timeout_id;
+    gboolean suppress_themes_autosave;
     guint window_manager_autosave_timeout_id;
     gboolean suppress_window_manager_autosave;
     guint display_edit_autosave_timeout_id;
@@ -307,6 +310,128 @@ static void apply_window_manager_config_to_ui(DcAppController *app, const DcWind
     gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_active_opacity_scale(app->window_manager_page)), config->active_opacity);
 }
 
+static void fill_combo_with_values(GtkComboBoxText *combo, GStrv values) {
+    guint i;
+
+    gtk_combo_box_text_remove_all(combo);
+    if (values == NULL) {
+        return;
+    }
+
+    for (i = 0; values[i] != NULL; i++) {
+        gtk_combo_box_text_append(combo, values[i], values[i]);
+    }
+
+    if (values[0] != NULL) {
+        gtk_combo_box_set_active(GTK_COMBO_BOX(combo), 0);
+    }
+}
+
+static void ensure_combo_has_active_id(GtkComboBoxText *combo, const char *id) {
+    if (id == NULL || *id == '\0') {
+        return;
+    }
+
+    if (!gtk_combo_box_set_active_id(GTK_COMBO_BOX(combo), id)) {
+        gtk_combo_box_text_append(combo, id, id);
+        gtk_combo_box_set_active_id(GTK_COMBO_BOX(combo), id);
+    }
+}
+
+static void populate_theme_choices(DcAppController *app) {
+    GStrv gtk_themes = NULL;
+    GStrv icon_themes = NULL;
+    GStrv cursor_themes = NULL;
+    GStrv fonts = NULL;
+    char *error_message = NULL;
+
+    if (dc_theme_service_list_gtk_themes(&gtk_themes, &error_message)) {
+        fill_combo_with_values(GTK_COMBO_BOX_TEXT(dc_themes_page_get_theme_combo(app->themes_page)), gtk_themes);
+    }
+    g_free(error_message);
+    error_message = NULL;
+
+    if (dc_theme_service_list_icon_themes(&icon_themes, &error_message)) {
+        fill_combo_with_values(GTK_COMBO_BOX_TEXT(dc_themes_page_get_icons_combo(app->themes_page)), icon_themes);
+    }
+    g_free(error_message);
+    error_message = NULL;
+
+    if (dc_theme_service_list_cursor_themes(&cursor_themes, &error_message)) {
+        fill_combo_with_values(GTK_COMBO_BOX_TEXT(dc_themes_page_get_cursor_combo(app->themes_page)), cursor_themes);
+    }
+    g_free(error_message);
+    error_message = NULL;
+
+    if (dc_theme_service_list_fonts(&fonts, &error_message)) {
+        fill_combo_with_values(GTK_COMBO_BOX_TEXT(dc_themes_page_get_font_combo(app->themes_page)), fonts);
+    }
+    g_free(error_message);
+
+    g_strfreev(gtk_themes);
+    g_strfreev(icon_themes);
+    g_strfreev(cursor_themes);
+    g_strfreev(fonts);
+}
+
+static void apply_theme_config_to_ui(DcAppController *app, const DcThemeConfig *config) {
+    ensure_combo_has_active_id(GTK_COMBO_BOX_TEXT(dc_themes_page_get_theme_combo(app->themes_page)), config->gtk_theme);
+    ensure_combo_has_active_id(GTK_COMBO_BOX_TEXT(dc_themes_page_get_icons_combo(app->themes_page)), config->icon_theme);
+    ensure_combo_has_active_id(GTK_COMBO_BOX_TEXT(dc_themes_page_get_cursor_combo(app->themes_page)), config->cursor_theme);
+    ensure_combo_has_active_id(GTK_COMBO_BOX_TEXT(dc_themes_page_get_font_combo(app->themes_page)), config->font_name);
+    ensure_combo_has_active_id(GTK_COMBO_BOX_TEXT(dc_themes_page_get_mode_combo(app->themes_page)), config->interface_mode);
+    ensure_combo_has_active_id(GTK_COMBO_BOX_TEXT(dc_themes_page_get_mono_font_combo(app->themes_page)), config->monospace_font);
+    gtk_range_set_value(GTK_RANGE(dc_themes_page_get_cursor_size_scale(app->themes_page)), config->cursor_size);
+    gtk_range_set_value(GTK_RANGE(dc_themes_page_get_text_scale(app->themes_page)), config->text_scale);
+}
+
+static DcThemeConfig *collect_theme_config_from_ui(DcAppController *app) {
+    DcThemeConfig *config;
+    const char *active_id;
+
+    config = dc_theme_config_new();
+
+    active_id = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_themes_page_get_theme_combo(app->themes_page)));
+    if (active_id != NULL) {
+        g_free(config->gtk_theme);
+        config->gtk_theme = g_strdup(active_id);
+    }
+
+    active_id = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_themes_page_get_icons_combo(app->themes_page)));
+    if (active_id != NULL) {
+        g_free(config->icon_theme);
+        config->icon_theme = g_strdup(active_id);
+    }
+
+    active_id = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_themes_page_get_cursor_combo(app->themes_page)));
+    if (active_id != NULL) {
+        g_free(config->cursor_theme);
+        config->cursor_theme = g_strdup(active_id);
+    }
+
+    active_id = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_themes_page_get_font_combo(app->themes_page)));
+    if (active_id != NULL) {
+        g_free(config->font_name);
+        config->font_name = g_strdup(active_id);
+    }
+
+    active_id = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_themes_page_get_mode_combo(app->themes_page)));
+    if (active_id != NULL) {
+        g_free(config->interface_mode);
+        config->interface_mode = g_strdup(active_id);
+    }
+
+    active_id = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_themes_page_get_mono_font_combo(app->themes_page)));
+    if (active_id != NULL) {
+        g_free(config->monospace_font);
+        config->monospace_font = g_strdup(active_id);
+    }
+
+    config->cursor_size = (int) gtk_range_get_value(GTK_RANGE(dc_themes_page_get_cursor_size_scale(app->themes_page)));
+    config->text_scale = gtk_range_get_value(GTK_RANGE(dc_themes_page_get_text_scale(app->themes_page)));
+    return config;
+}
+
 static DcVenomConfig *collect_venom_config_from_ui(DcAppController *app) {
     DcVenomConfig *config = dc_venom_config_new();
     const char *blur_method;
@@ -523,6 +648,44 @@ static void on_window_manager_save(DcAppController *app) {
     dc_window_manager_config_free(config);
 }
 
+static void on_themes_load(DcAppController *app) {
+    DcThemeConfig *config = NULL;
+    char *error_message = NULL;
+
+    app->suppress_themes_autosave = TRUE;
+    populate_theme_choices(app);
+
+    if (dc_theme_config_load(&config, &error_message)) {
+        apply_theme_config_to_ui(app, config);
+        dc_theme_config_free(config);
+        gtk_widget_set_sensitive(dc_themes_page_get_mono_font_combo(app->themes_page), FALSE);
+        gtk_widget_set_tooltip_text(dc_themes_page_get_mono_font_combo(app->themes_page),
+                                    "Monospace font wiring is not exposed by the current theme daemon yet.");
+        app->suppress_themes_autosave = FALSE;
+        return;
+    }
+
+    app->suppress_themes_autosave = FALSE;
+    g_warning("%s", error_message != NULL ? error_message : "Failed to load theme daemon config.");
+    g_free(error_message);
+}
+
+static void on_themes_save(DcAppController *app) {
+    DcThemeConfig *config;
+    char *error_message = NULL;
+
+    config = collect_theme_config_from_ui(app);
+    if (!dc_theme_config_apply(config, &error_message)) {
+        set_status(app, error_message != NULL ? error_message : "Failed to apply theme settings.");
+        g_free(error_message);
+        dc_theme_config_free(config);
+        return;
+    }
+
+    set_status(app, "Theme settings applied.");
+    dc_theme_config_free(config);
+}
+
 static void on_window_manager_add_desktop_clicked(GtkButton *button, gpointer user_data) {
     DcAppController *app = user_data;
     char *error_message = NULL;
@@ -648,6 +811,14 @@ static gboolean flush_compositor_autosave(gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
+static gboolean flush_themes_autosave(gpointer user_data) {
+    DcAppController *app = user_data;
+
+    app->themes_autosave_timeout_id = 0;
+    on_themes_save(app);
+    return G_SOURCE_REMOVE;
+}
+
 static gboolean flush_display_edit_autosave(gpointer user_data) {
     DcAppController *app = user_data;
 
@@ -668,6 +839,20 @@ static void queue_compositor_autosave(gpointer user_data) {
     }
 
     app->compositor_autosave_timeout_id = g_timeout_add(200, flush_compositor_autosave, app);
+}
+
+static void queue_themes_autosave(gpointer user_data) {
+    DcAppController *app = user_data;
+
+    if (app->suppress_themes_autosave) {
+        return;
+    }
+
+    if (app->themes_autosave_timeout_id != 0) {
+        g_source_remove(app->themes_autosave_timeout_id);
+    }
+
+    app->themes_autosave_timeout_id = g_timeout_add(200, flush_themes_autosave, app);
 }
 
 static void queue_display_edit_autosave(gpointer user_data) {
@@ -701,6 +886,11 @@ static void queue_window_manager_autosave(gpointer user_data) {
 static void on_compositor_widget_changed(GtkWidget *widget, gpointer user_data) {
     (void) widget;
     queue_compositor_autosave(user_data);
+}
+
+static void on_themes_widget_changed(GtkWidget *widget, gpointer user_data) {
+    (void) widget;
+    queue_themes_autosave(user_data);
 }
 
 static void on_compositor_switch_active_changed(GObject *object, GParamSpec *pspec, gpointer user_data) {
@@ -750,6 +940,16 @@ static void connect_compositor_autosave_signals(DcAppController *app) {
     g_signal_connect(dc_compositor_page_get_backend_combo(app->compositor_page), "changed", G_CALLBACK(on_compositor_widget_changed), app);
     g_signal_connect(dc_compositor_page_get_vsync_switch(app->compositor_page), "notify::active", G_CALLBACK(on_compositor_switch_active_changed), app);
     g_signal_connect(dc_compositor_page_get_use_damage_switch(app->compositor_page), "notify::active", G_CALLBACK(on_compositor_switch_active_changed), app);
+}
+
+static void connect_themes_autosave_signals(DcAppController *app) {
+    g_signal_connect(dc_themes_page_get_mode_combo(app->themes_page), "changed", G_CALLBACK(on_themes_widget_changed), app);
+    g_signal_connect(dc_themes_page_get_theme_combo(app->themes_page), "changed", G_CALLBACK(on_themes_widget_changed), app);
+    g_signal_connect(dc_themes_page_get_icons_combo(app->themes_page), "changed", G_CALLBACK(on_themes_widget_changed), app);
+    g_signal_connect(dc_themes_page_get_cursor_combo(app->themes_page), "changed", G_CALLBACK(on_themes_widget_changed), app);
+    g_signal_connect(dc_themes_page_get_font_combo(app->themes_page), "changed", G_CALLBACK(on_themes_widget_changed), app);
+    g_signal_connect(dc_themes_page_get_cursor_size_scale(app->themes_page), "value-changed", G_CALLBACK(on_themes_widget_changed), app);
+    g_signal_connect(dc_themes_page_get_text_scale(app->themes_page), "value-changed", G_CALLBACK(on_themes_widget_changed), app);
 }
 
 static void connect_display_edit_autosave_signals(DcAppController *app) {
@@ -1376,10 +1576,12 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_widget_show_all(app->window);
     reload_outputs(app);
     on_display_edit_load(app);
+    on_themes_load(app);
     on_window_manager_load(app);
     configure_display_edit_capabilities(app);
     on_compositor_load_clicked(NULL, app);
     connect_display_edit_autosave_signals(app);
+    connect_themes_autosave_signals(app);
     connect_window_manager_autosave_signals(app);
     connect_compositor_autosave_signals(app);
     app->display_edit_refresh_timeout_id = g_timeout_add_seconds(60, refresh_display_edit_runtime, app);
@@ -1427,6 +1629,9 @@ static void dc_app_controller_free(DcAppController *app) {
     }
     if (app->compositor_autosave_timeout_id != 0) {
         g_source_remove(app->compositor_autosave_timeout_id);
+    }
+    if (app->themes_autosave_timeout_id != 0) {
+        g_source_remove(app->themes_autosave_timeout_id);
     }
     if (app->window_manager_autosave_timeout_id != 0) {
         g_source_remove(app->window_manager_autosave_timeout_id);

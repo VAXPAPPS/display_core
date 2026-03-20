@@ -2,6 +2,14 @@
 
 struct _DcThemesPage {
     GtkWidget *root;
+    GtkWidget *mode_combo;
+    GtkWidget *theme_combo;
+    GtkWidget *icons_combo;
+    GtkWidget *cursor_combo;
+    GtkWidget *font_combo;
+    GtkWidget *mono_font_combo;
+    GtkWidget *cursor_size_scale;
+    GtkWidget *text_scale;
 };
 
 static const char *THEMES_PAGE_CSS =
@@ -182,15 +190,6 @@ DcThemesPage *dc_themes_page_new(void) {
     GtkWidget *assets_box;
     GtkWidget *typography_card;
     GtkWidget *typography_box;
-    GtkWidget *mode_combo;
-    GtkWidget *theme_combo;
-    GtkWidget *icons_combo;
-    GtkWidget *cursor_combo;
-    GtkWidget *font_combo;
-    GtkWidget *mono_font_combo;
-    GtkWidget *cursor_size_scale;
-    GtkWidget *text_scale;
-
     page = g_new0(DcThemesPage, 1);
     scroller = gtk_scrolled_window_new(NULL, NULL);
     content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
@@ -206,73 +205,73 @@ DcThemesPage *dc_themes_page_new(void) {
 
     appearance_card = create_card();
     appearance_box = gtk_bin_get_child(GTK_BIN(appearance_card));
-    mode_combo = create_combo("system", "Follow System",
-                              "light", "Light Mode",
-                              "dark", "Dark Mode");
-    theme_combo = create_combo("adwaita", "Adwaita",
-                               "vaxp-night", "VAXP Night",
-                               "glass-midnight", "Glass Midnight");
+    page->mode_combo = create_combo("system", "Follow System",
+                                    "light", "Light Mode",
+                                    "dark", "Dark Mode");
+    page->theme_combo = create_combo("adwaita", "Adwaita",
+                                     "vaxp-night", "VAXP Night",
+                                     "glass-midnight", "Glass Midnight");
 
     assets_card = create_card();
     assets_box = gtk_bin_get_child(GTK_BIN(assets_card));
-    icons_combo = create_combo("adwaita", "Adwaita",
-                               "papirus-dark", "Papirus Dark",
-                               "vaxp-icons", "VAXP Icons");
-    cursor_combo = create_combo("adwaita", "Adwaita",
-                                "bibata-ice", "Bibata Ice",
-                                "vaxp-cursor", "VAXP Cursor");
-    cursor_size_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 16.0, 64.0, 1.0);
-    gtk_widget_set_size_request(cursor_size_scale, 160, -1);
-    gtk_scale_set_draw_value(GTK_SCALE(cursor_size_scale), TRUE);
-    gtk_range_set_value(GTK_RANGE(cursor_size_scale), 24.0);
+    page->icons_combo = create_combo("adwaita", "Adwaita",
+                                     "papirus-dark", "Papirus Dark",
+                                     "vaxp-icons", "VAXP Icons");
+    page->cursor_combo = create_combo("adwaita", "Adwaita",
+                                      "bibata-ice", "Bibata Ice",
+                                      "vaxp-cursor", "VAXP Cursor");
+    page->cursor_size_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 16.0, 64.0, 1.0);
+    gtk_widget_set_size_request(page->cursor_size_scale, 160, -1);
+    gtk_scale_set_draw_value(GTK_SCALE(page->cursor_size_scale), TRUE);
+    gtk_range_set_value(GTK_RANGE(page->cursor_size_scale), 24.0);
 
     typography_card = create_card();
     typography_box = gtk_bin_get_child(GTK_BIN(typography_card));
-    font_combo = create_combo("sans-10", "Sans 10",
-                              "cantarell-11", "Cantarell 11",
-                              "ibm-plex-sans-10", "IBM Plex Sans 10");
-    mono_font_combo = create_combo("monospace-10", "Monospace 10",
-                                   "jetbrains-mono-10", "JetBrains Mono 10",
-                                   "iosevka-11", "Iosevka 11");
-    text_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.80, 1.60, 0.05);
-    gtk_widget_set_size_request(text_scale, 160, -1);
-    gtk_scale_set_draw_value(GTK_SCALE(text_scale), TRUE);
-    gtk_range_set_value(GTK_RANGE(text_scale), 1.00);
+    page->font_combo = create_combo("Sans 10", "Sans 10",
+                                    "Cantarell 11", "Cantarell 11",
+                                    "IBM Plex Sans 10", "IBM Plex Sans 10");
+    page->mono_font_combo = create_combo("Monospace 10", "Monospace 10",
+                                         "JetBrains Mono 10", "JetBrains Mono 10",
+                                         "Iosevka 11", "Iosevka 11");
+    page->text_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.80, 1.60, 0.05);
+    gtk_widget_set_size_request(page->text_scale, 160, -1);
+    gtk_scale_set_draw_value(GTK_SCALE(page->text_scale), TRUE);
+    gtk_range_set_value(GTK_RANGE(page->text_scale), 1.00);
 
     gtk_box_pack_start(GTK_BOX(appearance_box), create_group_label("APPEARANCE"), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(appearance_box), create_setting_row("Interface Mode",
                                                                    "Switch between light, dark, or following the system preference.",
-                                                                   mode_combo), FALSE, FALSE, 0);
+                                                                   page->mode_combo), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(appearance_box), create_setting_row("GTK Theme",
                                                                    "Choose the visual shell theme used by applications and panels.",
-                                                                   theme_combo), FALSE, FALSE, 0);
+                                                                   page->theme_combo), FALSE, FALSE, 0);
 
     gtk_box_pack_start(GTK_BOX(assets_box), create_group_label("ASSETS"), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(assets_box), create_setting_row("Icon Theme",
                                                                "Select the icon pack exposed across the desktop.",
-                                                               icons_combo), FALSE, FALSE, 0);
+                                                               page->icons_combo), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(assets_box), create_setting_row("Cursor Theme",
                                                                "Choose the mouse pointer theme used by the session.",
-                                                               cursor_combo), FALSE, FALSE, 0);
+                                                               page->cursor_combo), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(assets_box), create_setting_row("Cursor Size",
                                                                "Set the visual scale used by the pointer assets.",
-                                                               cursor_size_scale), FALSE, FALSE, 0);
+                                                               page->cursor_size_scale), FALSE, FALSE, 0);
 
     gtk_box_pack_start(GTK_BOX(typography_box), create_group_label("TYPOGRAPHY"), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(typography_box), create_setting_row("Interface Font",
                                                                    "Pick the default UI font family and size for the desktop.",
-                                                                   font_combo), FALSE, FALSE, 0);
+                                                                   page->font_combo), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(typography_box), create_setting_row("Monospace Font",
                                                                    "Choose the monospace font used by terminals and code-oriented apps.",
-                                                                   mono_font_combo), FALSE, FALSE, 0);
+                                                                   page->mono_font_combo), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(typography_box), create_setting_row("Text Scale",
-                                                                   "Preview the global UI text scaling direction before wiring the logic.",
-                                                                   text_scale), FALSE, FALSE, 0);
+                                                                   "Scale the global GTK text size used across the session.",
+                                                                   page->text_scale), FALSE, FALSE, 0);
 
     {
         GtkWidget *note;
 
-        note = gtk_label_new("Themes is currently UI-only. Theme application logic, persistence, and backend integration will be planned before implementation.");
+        note = gtk_label_new("Theme settings are wired to the VAXP theme daemon. Interface mode and monospace font can stay UI-only until their backend is finalized.");
         gtk_widget_set_halign(note, GTK_ALIGN_START);
         gtk_label_set_line_wrap(GTK_LABEL(note), TRUE);
         add_css_class(note, "themes-note");
@@ -293,4 +292,36 @@ void dc_themes_page_free(DcThemesPage *page) {
 
 GtkWidget *dc_themes_page_get_widget(DcThemesPage *page) {
     return page->root;
+}
+
+GtkWidget *dc_themes_page_get_mode_combo(DcThemesPage *page) {
+    return page->mode_combo;
+}
+
+GtkWidget *dc_themes_page_get_theme_combo(DcThemesPage *page) {
+    return page->theme_combo;
+}
+
+GtkWidget *dc_themes_page_get_icons_combo(DcThemesPage *page) {
+    return page->icons_combo;
+}
+
+GtkWidget *dc_themes_page_get_cursor_combo(DcThemesPage *page) {
+    return page->cursor_combo;
+}
+
+GtkWidget *dc_themes_page_get_font_combo(DcThemesPage *page) {
+    return page->font_combo;
+}
+
+GtkWidget *dc_themes_page_get_mono_font_combo(DcThemesPage *page) {
+    return page->mono_font_combo;
+}
+
+GtkWidget *dc_themes_page_get_cursor_size_scale(DcThemesPage *page) {
+    return page->cursor_size_scale;
+}
+
+GtkWidget *dc_themes_page_get_text_scale(DcThemesPage *page) {
+    return page->text_scale;
 }

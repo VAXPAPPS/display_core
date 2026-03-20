@@ -1,5 +1,5 @@
 #include "ui/custom_headerbar.h"
-
+//     "  padding: 8px 10px 8px 16px;"
 static const char *CUSTOM_HEADERBAR_CSS =
     ".dc-headerbar {"
     "  background:rgba(0, 0, 0, 0);"
@@ -9,8 +9,8 @@ static const char *CUSTOM_HEADERBAR_CSS =
     "  min-height: 26px;"
     "}"
     ".dc-window-btn {"
-    "  min-width: 16px;"
-    "  min-height: 16px;"
+    "  min-width: 15px;"
+    "  min-height: 15px;"
     "  background-image: none;"
     "  background-color: transparent;"
     "  color: transparent;"
