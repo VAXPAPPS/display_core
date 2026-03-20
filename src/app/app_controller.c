@@ -87,12 +87,16 @@ static void configure_display_edit_capabilities(DcAppController *app) {
     if (dc_xrandr_service_has_vrr_support(app->service, &vrr_supported, &error_message) && vrr_supported) {
         gtk_widget_set_sensitive(vrr_switch, TRUE);
         gtk_widget_set_tooltip_text(vrr_switch, "Variable Refresh Rate is available on at least one connected output.");
+        gtk_label_set_text(GTK_LABEL(dc_display_edit_page_get_vrr_status_label(app->display_edit_page)),
+                           "VRR status: available on current connected outputs.");
         g_free(error_message);
         return;
     }
 
     gtk_widget_set_sensitive(vrr_switch, FALSE);
     gtk_widget_set_tooltip_text(vrr_switch, "Variable Refresh Rate is not exposed by the current connected outputs or driver.");
+    gtk_label_set_text(GTK_LABEL(dc_display_edit_page_get_vrr_status_label(app->display_edit_page)),
+                       "VRR status: unavailable on current outputs or driver.");
     g_free(error_message);
 }
 

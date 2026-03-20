@@ -8,6 +8,7 @@ struct _DcDisplayEditPage {
     GtkWidget *night_light_custom_start_spin;
     GtkWidget *night_light_custom_end_spin;
     GtkWidget *vrr_switch;
+    GtkWidget *vrr_status_label;
     GtkWidget *adaptive_brightness_switch;
     GtkWidget *gamma_scale;
     GtkWidget *vibrance_scale;
@@ -50,6 +51,11 @@ static const char *DISPLAY_EDIT_CSS =
     ".dedit-setting-desc {"
     "  color: rgba(255,255,255,0.45);"
     "  font-size: 11.5px;"
+    "}"
+    ".dedit-status-note {"
+    "  color: rgba(255,255,255,0.60);"
+    "  font-size: 11px;"
+    "  padding: 6px 18px 12px;"
     "}"
     "switch {"
     "  background-color: rgba(255,255,255,0.12);"
@@ -206,6 +212,9 @@ DcDisplayEditPage *dc_display_edit_page_new(void) {
     page->night_light_custom_start_spin = gtk_spin_button_new(GTK_ADJUSTMENT(custom_start_adjustment), 1.0, 0);
     page->night_light_custom_end_spin = gtk_spin_button_new(GTK_ADJUSTMENT(custom_end_adjustment), 1.0, 0);
     page->vrr_switch = gtk_switch_new();
+    page->vrr_status_label = gtk_label_new("VRR status: checking runtime support...");
+    gtk_widget_set_halign(page->vrr_status_label, GTK_ALIGN_START);
+    add_css_class(page->vrr_status_label, "dedit-status-note");
 
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->night_light_schedule_combo), "sunset", "Sunset to Sunrise");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->night_light_schedule_combo), "custom", "Custom Schedule");
@@ -268,6 +277,7 @@ DcDisplayEditPage *dc_display_edit_page_new(void) {
                        FALSE,
                        FALSE,
                        0);
+    gtk_box_pack_start(GTK_BOX(night_box), page->vrr_status_label, FALSE, FALSE, 0);
 
     gtk_box_pack_start(GTK_BOX(display_box), create_group_label("DISPLAY TUNING"), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(display_box), create_setting_row("Adaptive Brightness",
@@ -326,6 +336,10 @@ GtkWidget *dc_display_edit_page_get_night_light_custom_end_spin(DcDisplayEditPag
 
 GtkWidget *dc_display_edit_page_get_vrr_switch(DcDisplayEditPage *page) {
     return page->vrr_switch;
+}
+
+GtkWidget *dc_display_edit_page_get_vrr_status_label(DcDisplayEditPage *page) {
+    return page->vrr_status_label;
 }
 
 GtkWidget *dc_display_edit_page_get_adaptive_brightness_switch(DcDisplayEditPage *page) {

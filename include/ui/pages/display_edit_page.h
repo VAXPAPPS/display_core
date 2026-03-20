@@ -14,6 +14,7 @@ GtkWidget *dc_display_edit_page_get_night_light_schedule_combo(DcDisplayEditPage
 GtkWidget *dc_display_edit_page_get_night_light_custom_start_spin(DcDisplayEditPage *page);
 GtkWidget *dc_display_edit_page_get_night_light_custom_end_spin(DcDisplayEditPage *page);
 GtkWidget *dc_display_edit_page_get_vrr_switch(DcDisplayEditPage *page);
+GtkWidget *dc_display_edit_page_get_vrr_status_label(DcDisplayEditPage *page);
 GtkWidget *dc_display_edit_page_get_adaptive_brightness_switch(DcDisplayEditPage *page);
 GtkWidget *dc_display_edit_page_get_gamma_scale(DcDisplayEditPage *page);
 GtkWidget *dc_display_edit_page_get_vibrance_scale(DcDisplayEditPage *page);
