@@ -11,6 +11,7 @@
 #include "ui/pages/compositor_page.h"
 #include "ui/pages/display_edit_page.h"
 #include "ui/pages/display_page.h"
+#include "ui/pages/themes_page.h"
 #include "ui/pages/window_manager_page.h"
 #include "ui/preview_canvas.h"
 
@@ -24,6 +25,7 @@ typedef struct {
     GtkWidget *window;
     GtkWidget *stack;
     DcDisplayPage *display_page;
+    DcThemesPage *themes_page;
     DcDisplayEditPage *display_edit_page;
     DcWindowManagerPage *window_manager_page;
     DcCompositorPage *compositor_page;
@@ -1296,6 +1298,7 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
 
     app->preview = dc_preview_canvas_new();
     app->display_page = dc_display_page_new(dc_preview_canvas_get_widget(app->preview));
+    app->themes_page = dc_themes_page_new();
     app->display_edit_page = dc_display_edit_page_new();
     app->window_manager_page = dc_window_manager_page_new();
     app->compositor_page = dc_compositor_page_new();
@@ -1345,6 +1348,10 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
                          dc_display_page_get_widget(app->display_page),
                          "display",
                          "Display");
+    gtk_stack_add_titled(GTK_STACK(app->stack),
+                         dc_themes_page_get_widget(app->themes_page),
+                         "themes",
+                         "Themes");
     gtk_stack_add_titled(GTK_STACK(app->stack),
                          dc_display_edit_page_get_widget(app->display_edit_page),
                          "display-edit",
@@ -1405,6 +1412,9 @@ static void dc_app_controller_free(DcAppController *app) {
     }
     if (app->display_edit_page != NULL) {
         dc_display_edit_page_free(app->display_edit_page);
+    }
+    if (app->themes_page != NULL) {
+        dc_themes_page_free(app->themes_page);
     }
     if (app->window_manager_page != NULL) {
         dc_window_manager_page_free(app->window_manager_page);
