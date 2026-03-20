@@ -81,6 +81,36 @@ static void set_status(DcAppController *app, const char *message) {
     gtk_label_set_text(GTK_LABEL(dc_display_page_get_status_label(app->display_page)), message);
 }
 
+static void set_window_manager_rules_text(DcAppController *app, const char *text) {
+    GtkTextBuffer *buffer;
+
+    buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(dc_window_manager_page_get_rules_text_view(app->window_manager_page)));
+    gtk_text_buffer_set_text(buffer, text != NULL ? text : "", -1);
+}
+
+static void refresh_window_manager_rules(DcAppController *app) {
+    char *rules_output = NULL;
+    char *error_message = NULL;
+
+    if (!dc_window_manager_list_rules(&rules_output, &error_message)) {
+        set_window_manager_rules_text(app, "Unable to query PoisonBlade rules on this session.");
+        if (error_message != NULL) {
+            set_status(app, error_message);
+        }
+        g_free(error_message);
+        return;
+    }
+
+    if (rules_output == NULL || *rules_output == '\0') {
+        set_window_manager_rules_text(app, "No rules are currently registered.");
+    } else {
+        set_window_manager_rules_text(app, rules_output);
+    }
+
+    set_status(app, "PoisonBlade rules list refreshed.");
+    g_free(rules_output);
+}
+
 static void configure_display_edit_capabilities(DcAppController *app) {
     DcVrrSupportInfo vrr_info;
     char *error_message = NULL;
@@ -377,6 +407,7 @@ static void on_window_manager_load(DcAppController *app) {
     if (dc_window_manager_config_load(&config, &error_message)) {
         apply_window_manager_config_to_ui(app, config);
         dc_window_manager_apply_config(config, NULL);
+        refresh_window_manager_rules(app);
         dc_window_manager_config_free(config);
         app->suppress_window_manager_autosave = FALSE;
         return;
@@ -407,6 +438,95 @@ static void on_window_manager_save(DcAppController *app) {
 
     g_free(error_message);
     dc_window_manager_config_free(config);
+}
+
+static void on_window_manager_add_desktop_clicked(GtkButton *button, gpointer user_data) {
+    DcAppController *app = user_data;
+    char *error_message = NULL;
+    const char *name;
+
+    (void) button;
+    name = gtk_entry_get_text(GTK_ENTRY(dc_window_manager_page_get_add_desktop_entry(app->window_manager_page)));
+    if (!dc_window_manager_add_desktop(name, &error_message)) {
+        set_status(app, error_message != NULL ? error_message : "Failed to create a new desktop.");
+        g_free(error_message);
+        return;
+    }
+
+    set_status(app, "PoisonBlade created a new desktop.");
+}
+
+static void on_window_manager_rename_desktop_clicked(GtkButton *button, gpointer user_data) {
+    DcAppController *app = user_data;
+    char *error_message = NULL;
+    const char *name;
+
+    (void) button;
+    name = gtk_entry_get_text(GTK_ENTRY(dc_window_manager_page_get_rename_desktop_entry(app->window_manager_page)));
+    if (!dc_window_manager_rename_desktop(name, &error_message)) {
+        set_status(app, error_message != NULL ? error_message : "Failed to rename the current desktop.");
+        g_free(error_message);
+        return;
+    }
+
+    set_status(app, "PoisonBlade renamed the current desktop.");
+}
+
+static void on_window_manager_remove_desktop_clicked(GtkButton *button, gpointer user_data) {
+    DcAppController *app = user_data;
+    char *error_message = NULL;
+
+    (void) button;
+    if (!dc_window_manager_remove_current_desktop(&error_message)) {
+        set_status(app, error_message != NULL ? error_message : "Failed to remove the current desktop.");
+        g_free(error_message);
+        return;
+    }
+
+    set_status(app, "PoisonBlade removed the current desktop.");
+}
+
+static void on_window_manager_add_rule_clicked(GtkButton *button, gpointer user_data) {
+    DcAppController *app = user_data;
+    char *error_message = NULL;
+    const char *app_name;
+    const char *desktop;
+    const char *state;
+
+    (void) button;
+    app_name = gtk_entry_get_text(GTK_ENTRY(dc_window_manager_page_get_rule_app_entry(app->window_manager_page)));
+    desktop = gtk_entry_get_text(GTK_ENTRY(dc_window_manager_page_get_rule_desktop_entry(app->window_manager_page)));
+    state = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_window_manager_page_get_rule_state_combo(app->window_manager_page)));
+    if (!dc_window_manager_add_rule(app_name, desktop, state, &error_message)) {
+        set_status(app, error_message != NULL ? error_message : "Failed to add the requested rule.");
+        g_free(error_message);
+        return;
+    }
+
+    refresh_window_manager_rules(app);
+    set_status(app, "PoisonBlade rule added successfully.");
+}
+
+static void on_window_manager_remove_rule_clicked(GtkButton *button, gpointer user_data) {
+    DcAppController *app = user_data;
+    char *error_message = NULL;
+    const char *app_name;
+
+    (void) button;
+    app_name = gtk_entry_get_text(GTK_ENTRY(dc_window_manager_page_get_remove_rule_entry(app->window_manager_page)));
+    if (!dc_window_manager_remove_rule(app_name, &error_message)) {
+        set_status(app, error_message != NULL ? error_message : "Failed to remove the requested rule.");
+        g_free(error_message);
+        return;
+    }
+
+    refresh_window_manager_rules(app);
+    set_status(app, "PoisonBlade rule removed successfully.");
+}
+
+static void on_window_manager_refresh_rules_clicked(GtkButton *button, gpointer user_data) {
+    (void) button;
+    refresh_window_manager_rules(user_data);
 }
 
 static gboolean refresh_display_edit_runtime(gpointer user_data) {
@@ -575,6 +695,12 @@ static void connect_window_manager_autosave_signals(DcAppController *app) {
     g_signal_connect(dc_window_manager_page_get_focus_opacity_switch(app->window_manager_page), "notify::active", G_CALLBACK(on_window_manager_switch_active_changed), app);
     g_signal_connect(dc_window_manager_page_get_inactive_opacity_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
     g_signal_connect(dc_window_manager_page_get_active_opacity_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
+    g_signal_connect(dc_window_manager_page_get_add_desktop_button(app->window_manager_page), "clicked", G_CALLBACK(on_window_manager_add_desktop_clicked), app);
+    g_signal_connect(dc_window_manager_page_get_rename_desktop_button(app->window_manager_page), "clicked", G_CALLBACK(on_window_manager_rename_desktop_clicked), app);
+    g_signal_connect(dc_window_manager_page_get_remove_desktop_button(app->window_manager_page), "clicked", G_CALLBACK(on_window_manager_remove_desktop_clicked), app);
+    g_signal_connect(dc_window_manager_page_get_add_rule_button(app->window_manager_page), "clicked", G_CALLBACK(on_window_manager_add_rule_clicked), app);
+    g_signal_connect(dc_window_manager_page_get_remove_rule_button(app->window_manager_page), "clicked", G_CALLBACK(on_window_manager_remove_rule_clicked), app);
+    g_signal_connect(dc_window_manager_page_get_refresh_rules_button(app->window_manager_page), "clicked", G_CALLBACK(on_window_manager_refresh_rules_clicked), app);
 }
 
 

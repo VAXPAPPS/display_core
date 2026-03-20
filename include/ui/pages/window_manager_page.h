@@ -22,5 +22,18 @@ GtkWidget *dc_window_manager_page_get_bottom_padding_scale(DcWindowManagerPage *
 GtkWidget *dc_window_manager_page_get_focus_opacity_switch(DcWindowManagerPage *page);
 GtkWidget *dc_window_manager_page_get_inactive_opacity_scale(DcWindowManagerPage *page);
 GtkWidget *dc_window_manager_page_get_active_opacity_scale(DcWindowManagerPage *page);
+GtkWidget *dc_window_manager_page_get_add_desktop_entry(DcWindowManagerPage *page);
+GtkWidget *dc_window_manager_page_get_add_desktop_button(DcWindowManagerPage *page);
+GtkWidget *dc_window_manager_page_get_rename_desktop_entry(DcWindowManagerPage *page);
+GtkWidget *dc_window_manager_page_get_rename_desktop_button(DcWindowManagerPage *page);
+GtkWidget *dc_window_manager_page_get_remove_desktop_button(DcWindowManagerPage *page);
+GtkWidget *dc_window_manager_page_get_rule_app_entry(DcWindowManagerPage *page);
+GtkWidget *dc_window_manager_page_get_rule_desktop_entry(DcWindowManagerPage *page);
+GtkWidget *dc_window_manager_page_get_rule_state_combo(DcWindowManagerPage *page);
+GtkWidget *dc_window_manager_page_get_add_rule_button(DcWindowManagerPage *page);
+GtkWidget *dc_window_manager_page_get_remove_rule_entry(DcWindowManagerPage *page);
+GtkWidget *dc_window_manager_page_get_remove_rule_button(DcWindowManagerPage *page);
+GtkWidget *dc_window_manager_page_get_refresh_rules_button(DcWindowManagerPage *page);
+GtkWidget *dc_window_manager_page_get_rules_text_view(DcWindowManagerPage *page);
 
 #endif

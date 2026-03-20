@@ -89,10 +89,13 @@ static gboolean apply_double_command(const char *key, double value, char **error
 
 static gboolean apply_string_command(const char *key, const char *value, char **error_message) {
     char *command;
+    char *quoted_value;
     gboolean success;
 
-    command = g_strdup_printf("vaxp config %s \"%s\"", key, value != NULL ? value : "");
+    quoted_value = g_shell_quote(value != NULL ? value : "");
+    command = g_strdup_printf("vaxp config %s %s", key, quoted_value);
     success = run_vaxp_command(command, error_message);
+    g_free(quoted_value);
     g_free(command);
     return success;
 }
@@ -313,5 +316,153 @@ gboolean dc_window_manager_apply_config(const DcWindowManagerConfig *config, cha
     }
 
     g_free(local_error);
+    return TRUE;
+}
+
+static gboolean run_single_arg_command(const char *prefix,
+                                       const char *value,
+                                       char **error_message) {
+    char *quoted_value;
+    char *command;
+    gboolean success;
+
+    if (value == NULL || *value == '\0') {
+        set_error(error_message, "A target value is required.");
+        return FALSE;
+    }
+
+    quoted_value = g_shell_quote(value);
+    command = g_strdup_printf("%s %s", prefix, quoted_value);
+    success = run_vaxp_command(command, error_message);
+    g_free(command);
+    g_free(quoted_value);
+    return success;
+}
+
+gboolean dc_window_manager_focus_node(const char *direction, char **error_message) {
+    return run_single_arg_command("vaxp node -f", direction, error_message);
+}
+
+gboolean dc_window_manager_swap_node(const char *direction, char **error_message) {
+    return run_single_arg_command("vaxp node -s", direction, error_message);
+}
+
+gboolean dc_window_manager_set_node_state(const char *state, char **error_message) {
+    return run_single_arg_command("vaxp node -t", state, error_message);
+}
+
+gboolean dc_window_manager_move_node_to_desktop(const char *target, gboolean follow, char **error_message) {
+    char *quoted_target;
+    char *command;
+    gboolean success;
+
+    if (target == NULL || *target == '\0') {
+        set_error(error_message, "Desktop target is required.");
+        return FALSE;
+    }
+
+    quoted_target = g_shell_quote(target);
+    command = g_strdup_printf("vaxp node -d %s%s", quoted_target, follow ? " --follow" : "");
+    success = run_vaxp_command(command, error_message);
+    g_free(command);
+    g_free(quoted_target);
+    return success;
+}
+
+gboolean dc_window_manager_move_node_to_monitor(const char *target, char **error_message) {
+    return run_single_arg_command("vaxp node -m", target, error_message);
+}
+
+gboolean dc_window_manager_focus_desktop(const char *target, char **error_message) {
+    return run_single_arg_command("vaxp desktop -f", target, error_message);
+}
+
+gboolean dc_window_manager_add_desktop(const char *name, char **error_message) {
+    return run_single_arg_command("vaxp monitor -a", name, error_message);
+}
+
+gboolean dc_window_manager_rename_desktop(const char *name, char **error_message) {
+    return run_single_arg_command("vaxp desktop -n", name, error_message);
+}
+
+gboolean dc_window_manager_remove_current_desktop(char **error_message) {
+    return run_vaxp_command("vaxp desktop -r", error_message);
+}
+
+gboolean dc_window_manager_add_rule(const char *app_name,
+                                    const char *desktop_target,
+                                    const char *state,
+                                    char **error_message) {
+    GString *command;
+    char *quoted_app;
+    char *quoted_target = NULL;
+    gboolean success;
+
+    if (app_name == NULL || *app_name == '\0') {
+        set_error(error_message, "Application name is required for a rule.");
+        return FALSE;
+    }
+
+    quoted_app = g_shell_quote(app_name);
+    command = g_string_new("vaxp rule -a ");
+    g_string_append(command, quoted_app);
+
+    if (desktop_target != NULL && *desktop_target != '\0') {
+        quoted_target = g_shell_quote(desktop_target);
+        g_string_append_printf(command, " desktop=%s", quoted_target);
+    }
+
+    if (state != NULL && *state != '\0') {
+        g_string_append_printf(command, " state=%s", state);
+    }
+
+    success = run_vaxp_command(command->str, error_message);
+    g_string_free(command, TRUE);
+    g_free(quoted_app);
+    g_free(quoted_target);
+    return success;
+}
+
+gboolean dc_window_manager_remove_rule(const char *app_name, char **error_message) {
+    return run_single_arg_command("vaxp rule -r", app_name, error_message);
+}
+
+gboolean dc_window_manager_list_rules(char **rules_output, char **error_message) {
+    gboolean success;
+    gint exit_status = 0;
+    char *stdout_output = NULL;
+    char *stderr_output = NULL;
+    GError *error = NULL;
+
+    if (rules_output == NULL) {
+        set_error(error_message, "Rules output buffer is required.");
+        return FALSE;
+    }
+
+    success = g_spawn_command_line_sync("vaxp rule -l",
+                                        &stdout_output,
+                                        &stderr_output,
+                                        &exit_status,
+                                        &error);
+    if (!success) {
+        set_error(error_message, error != NULL ? error->message : "Failed to list PoisonBlade rules.");
+        g_clear_error(&error);
+        g_free(stdout_output);
+        g_free(stderr_output);
+        return FALSE;
+    }
+
+    if (exit_status != 0) {
+        set_error(error_message,
+                  stderr_output != NULL && *stderr_output != '\0'
+                    ? stderr_output
+                    : "PoisonBlade rule query returned a non-zero exit status.");
+        g_free(stdout_output);
+        g_free(stderr_output);
+        return FALSE;
+    }
+
+    *rules_output = stdout_output != NULL ? stdout_output : g_strdup("");
+    g_free(stderr_output);
     return TRUE;
 }
