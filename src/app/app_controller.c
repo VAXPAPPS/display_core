@@ -2,10 +2,12 @@
 
 #include "domain/display_types.h"
 #include "services/profile_service.h"
+#include "services/display_edit_service.h"
 #include "services/venom_config_service.h"
 #include "services/xrandr_service.h"
 #include "ui/output_row.h"
 #include "ui/pages/compositor_page.h"
+#include "ui/pages/display_edit_page.h"
 #include "ui/pages/display_page.h"
 #include "ui/pages/window_manager_page.h"
 #include "ui/preview_canvas.h"
@@ -20,6 +22,7 @@ typedef struct {
     GtkWidget *window;
     GtkWidget *stack;
     DcDisplayPage *display_page;
+    DcDisplayEditPage *display_edit_page;
     DcWindowManagerPage *window_manager_page;
     DcCompositorPage *compositor_page;
     GPtrArray *output_models;
@@ -27,6 +30,8 @@ typedef struct {
     DcPreviewCanvas *preview;
     guint compositor_autosave_timeout_id;
     gboolean suppress_compositor_autosave;
+    guint display_edit_autosave_timeout_id;
+    gboolean suppress_display_edit_autosave;
 } DcAppController;
 
 typedef struct {
@@ -105,6 +110,15 @@ static void apply_venom_config_to_ui(DcAppController *app, const DcVenomConfig *
     gtk_switch_set_active(GTK_SWITCH(dc_compositor_page_get_use_damage_switch(app->compositor_page)), config->use_damage);
 }
 
+static void apply_display_edit_config_to_ui(DcAppController *app, const DcDisplayEditConfig *config) {
+    gtk_switch_set_active(GTK_SWITCH(dc_display_edit_page_get_night_light_switch(app->display_edit_page)), config->night_light_enabled);
+    gtk_range_set_value(GTK_RANGE(dc_display_edit_page_get_night_light_temperature_scale(app->display_edit_page)), config->night_light_temperature);
+    gtk_combo_box_set_active_id(GTK_COMBO_BOX(dc_display_edit_page_get_night_light_schedule_combo(app->display_edit_page)), config->night_light_schedule);
+    gtk_switch_set_active(GTK_SWITCH(dc_display_edit_page_get_adaptive_brightness_switch(app->display_edit_page)), config->adaptive_brightness);
+    gtk_range_set_value(GTK_RANGE(dc_display_edit_page_get_gamma_scale(app->display_edit_page)), config->gamma);
+    gtk_range_set_value(GTK_RANGE(dc_display_edit_page_get_vibrance_scale(app->display_edit_page)), config->vibrance);
+}
+
 static DcVenomConfig *collect_venom_config_from_ui(DcAppController *app) {
     DcVenomConfig *config = dc_venom_config_new();
     const char *blur_method;
@@ -140,6 +154,24 @@ static DcVenomConfig *collect_venom_config_from_ui(DcAppController *app) {
 
     config->vsync = gtk_switch_get_active(GTK_SWITCH(dc_compositor_page_get_vsync_switch(app->compositor_page)));
     config->use_damage = gtk_switch_get_active(GTK_SWITCH(dc_compositor_page_get_use_damage_switch(app->compositor_page)));
+    return config;
+}
+
+static DcDisplayEditConfig *collect_display_edit_config_from_ui(DcAppController *app) {
+    DcDisplayEditConfig *config;
+    const char *schedule;
+
+    config = dc_display_edit_config_new();
+    config->night_light_enabled = gtk_switch_get_active(GTK_SWITCH(dc_display_edit_page_get_night_light_switch(app->display_edit_page)));
+    config->night_light_temperature = (int) gtk_range_get_value(GTK_RANGE(dc_display_edit_page_get_night_light_temperature_scale(app->display_edit_page)));
+    schedule = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_display_edit_page_get_night_light_schedule_combo(app->display_edit_page)));
+    if (schedule != NULL) {
+        g_free(config->night_light_schedule);
+        config->night_light_schedule = g_strdup(schedule);
+    }
+    config->adaptive_brightness = gtk_switch_get_active(GTK_SWITCH(dc_display_edit_page_get_adaptive_brightness_switch(app->display_edit_page)));
+    config->gamma = gtk_range_get_value(GTK_RANGE(dc_display_edit_page_get_gamma_scale(app->display_edit_page)));
+    config->vibrance = (int) gtk_range_get_value(GTK_RANGE(dc_display_edit_page_get_vibrance_scale(app->display_edit_page)));
     return config;
 }
 
@@ -188,11 +220,61 @@ static void on_compositor_save_clicked(GtkButton *button, gpointer user_data) {
     dc_venom_config_free(config);
 }
 
+static void on_display_edit_load(DcAppController *app) {
+    DcDisplayEditConfig *config = NULL;
+    char *error_message = NULL;
+
+    app->suppress_display_edit_autosave = TRUE;
+
+    if (dc_display_edit_config_load(&config, &error_message)) {
+        apply_display_edit_config_to_ui(app, config);
+        dc_xrandr_service_apply_display_edit(app->service, config, NULL);
+        dc_display_edit_config_free(config);
+        app->suppress_display_edit_autosave = FALSE;
+        return;
+    }
+
+    app->suppress_display_edit_autosave = FALSE;
+    g_warning("%s", error_message != NULL ? error_message : "Failed to load display edit config.");
+    g_free(error_message);
+}
+
+static void on_display_edit_save(DcAppController *app) {
+    DcDisplayEditConfig *config;
+    char *error_message = NULL;
+
+    config = collect_display_edit_config_from_ui(app);
+
+    if (!dc_display_edit_config_save(config, &error_message)) {
+        g_warning("%s", error_message != NULL ? error_message : "Failed to save display edit config.");
+        g_free(error_message);
+        dc_display_edit_config_free(config);
+        return;
+    }
+
+    g_free(error_message);
+    error_message = NULL;
+    if (!dc_xrandr_service_apply_display_edit(app->service, config, &error_message)) {
+        g_warning("%s", error_message != NULL ? error_message : "Failed to apply display edit config.");
+    }
+
+    g_free(error_message);
+    dc_display_edit_config_free(config);
+}
+
 static gboolean flush_compositor_autosave(gpointer user_data) {
     DcAppController *app = user_data;
 
     app->compositor_autosave_timeout_id = 0;
     on_compositor_save_clicked(NULL, app);
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean flush_display_edit_autosave(gpointer user_data) {
+    DcAppController *app = user_data;
+
+    app->display_edit_autosave_timeout_id = 0;
+    on_display_edit_save(app);
     return G_SOURCE_REMOVE;
 }
 
@@ -210,6 +292,20 @@ static void queue_compositor_autosave(gpointer user_data) {
     app->compositor_autosave_timeout_id = g_timeout_add(200, flush_compositor_autosave, app);
 }
 
+static void queue_display_edit_autosave(gpointer user_data) {
+    DcAppController *app = user_data;
+
+    if (app->suppress_display_edit_autosave) {
+        return;
+    }
+
+    if (app->display_edit_autosave_timeout_id != 0) {
+        g_source_remove(app->display_edit_autosave_timeout_id);
+    }
+
+    app->display_edit_autosave_timeout_id = g_timeout_add(200, flush_display_edit_autosave, app);
+}
+
 static void on_compositor_widget_changed(GtkWidget *widget, gpointer user_data) {
     (void) widget;
     queue_compositor_autosave(user_data);
@@ -219,6 +315,17 @@ static void on_compositor_switch_active_changed(GObject *object, GParamSpec *psp
     (void) object;
     (void) pspec;
     queue_compositor_autosave(user_data);
+}
+
+static void on_display_edit_widget_changed(GtkWidget *widget, gpointer user_data) {
+    (void) widget;
+    queue_display_edit_autosave(user_data);
+}
+
+static void on_display_edit_switch_active_changed(GObject *object, GParamSpec *pspec, gpointer user_data) {
+    (void) object;
+    (void) pspec;
+    queue_display_edit_autosave(user_data);
 }
 
 static void connect_compositor_autosave_signals(DcAppController *app) {
@@ -240,6 +347,15 @@ static void connect_compositor_autosave_signals(DcAppController *app) {
     g_signal_connect(dc_compositor_page_get_backend_combo(app->compositor_page), "changed", G_CALLBACK(on_compositor_widget_changed), app);
     g_signal_connect(dc_compositor_page_get_vsync_switch(app->compositor_page), "notify::active", G_CALLBACK(on_compositor_switch_active_changed), app);
     g_signal_connect(dc_compositor_page_get_use_damage_switch(app->compositor_page), "notify::active", G_CALLBACK(on_compositor_switch_active_changed), app);
+}
+
+static void connect_display_edit_autosave_signals(DcAppController *app) {
+    g_signal_connect(dc_display_edit_page_get_night_light_switch(app->display_edit_page), "notify::active", G_CALLBACK(on_display_edit_switch_active_changed), app);
+    g_signal_connect(dc_display_edit_page_get_night_light_temperature_scale(app->display_edit_page), "value-changed", G_CALLBACK(on_display_edit_widget_changed), app);
+    g_signal_connect(dc_display_edit_page_get_night_light_schedule_combo(app->display_edit_page), "changed", G_CALLBACK(on_display_edit_widget_changed), app);
+    g_signal_connect(dc_display_edit_page_get_adaptive_brightness_switch(app->display_edit_page), "notify::active", G_CALLBACK(on_display_edit_switch_active_changed), app);
+    g_signal_connect(dc_display_edit_page_get_gamma_scale(app->display_edit_page), "value-changed", G_CALLBACK(on_display_edit_widget_changed), app);
+    g_signal_connect(dc_display_edit_page_get_vibrance_scale(app->display_edit_page), "value-changed", G_CALLBACK(on_display_edit_widget_changed), app);
 }
 
 
@@ -755,6 +871,7 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
 
     app->preview = dc_preview_canvas_new();
     app->display_page = dc_display_page_new(dc_preview_canvas_get_widget(app->preview));
+    app->display_edit_page = dc_display_edit_page_new();
     app->window_manager_page = dc_window_manager_page_new();
     app->compositor_page = dc_compositor_page_new();
     app->window = gtk_application_window_new(gtk_app);
@@ -809,6 +926,10 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
                          "display",
                          "Display");
     gtk_stack_add_titled(GTK_STACK(app->stack),
+                         dc_display_edit_page_get_widget(app->display_edit_page),
+                         "display-edit",
+                         "Display Edit");
+    gtk_stack_add_titled(GTK_STACK(app->stack),
                          dc_window_manager_page_get_widget(app->window_manager_page),
                          "window-manager",
                          "Window Manager");
@@ -827,7 +948,9 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     g_signal_connect(dc_display_page_get_load_profile_button(app->display_page), "clicked", G_CALLBACK(on_load_profile_clicked), app);
     gtk_widget_show_all(app->window);
     reload_outputs(app);
+    on_display_edit_load(app);
     on_compositor_load_clicked(NULL, app);
+    connect_display_edit_autosave_signals(app);
     connect_compositor_autosave_signals(app);
 }
 
@@ -856,6 +979,9 @@ static void dc_app_controller_free(DcAppController *app) {
     if (app->display_page != NULL) {
         dc_display_page_free(app->display_page);
     }
+    if (app->display_edit_page != NULL) {
+        dc_display_edit_page_free(app->display_edit_page);
+    }
     if (app->window_manager_page != NULL) {
         dc_window_manager_page_free(app->window_manager_page);
     }
@@ -867,6 +993,9 @@ static void dc_app_controller_free(DcAppController *app) {
     }
     if (app->compositor_autosave_timeout_id != 0) {
         g_source_remove(app->compositor_autosave_timeout_id);
+    }
+    if (app->display_edit_autosave_timeout_id != 0) {
+        g_source_remove(app->display_edit_autosave_timeout_id);
     }
 
     if (app->gtk_app != NULL) {

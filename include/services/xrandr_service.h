@@ -2,6 +2,7 @@
 #define DC_XRANDR_SERVICE_H
 
 #include "domain/display_types.h"
+#include "services/display_edit_service.h"
 
 typedef struct {
     Display *display;
@@ -17,5 +18,8 @@ gboolean dc_xrandr_service_load_outputs(DcXrandrService *service,
 gboolean dc_xrandr_service_apply_configs(DcXrandrService *service,
                                          GPtrArray *configs,
                                          char **error_message);
+gboolean dc_xrandr_service_apply_display_edit(DcXrandrService *service,
+                                              const DcDisplayEditConfig *config,
+                                              char **error_message);
 
 #endif
