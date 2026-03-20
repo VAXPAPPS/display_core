@@ -1,0 +1,145 @@
+.app-window {
+  background-color: rgba(0, 0, 0, 0.39);
+}
+
+.app-shell {
+  background-color: rgba(0, 0, 0, 0.39);
+;
+}
+
+.sidebar-card,
+.content-card,
+.toolbar-card,
+.preview-card,
+.display-card {
+  background-color: rgba(14, 14, 14, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 18px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+}
+
+.toolbar-card,
+.sidebar-card,
+.content-card,
+.preview-card {
+  padding: 14px;
+}
+
+.page-shell {
+  padding: 16px;
+}
+
+.page-title {
+  color: rgba(255, 255, 255, 0.97);
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.page-subtitle {
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 13px;
+}
+
+.panel-card {
+  background-color: rgba(14, 14, 14, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 18px;
+  padding: 16px;
+}
+
+.setting-title {
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 700;
+}
+
+.setting-description {
+  color: rgba(255, 255, 255, 0.60);
+  font-size: 12px;
+}
+
+.toolbar-label {
+  color: rgba(255, 255, 255, 0.86);
+  font-weight: 600;
+}
+
+.status-pill {
+  color: rgba(255, 255, 255, 0.92);
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 8px 14px;
+}
+
+button {
+  color: rgba(255, 255, 255, 0.95);
+  background-image: none;
+  background-color: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 9px 14px;
+}
+
+button:hover {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+
+.suggested-action {
+  background-color: rgba(255, 255, 255, 0.22);
+}
+
+entry,
+combobox box,
+spinbutton {
+  color: rgba(255, 255, 255, 0.95);
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 12px;
+}
+
+label {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+frame > border {
+  border-radius: 18px;
+  border-width: 0;
+}
+
+.display-card {
+  padding: 10px 12px 14px 12px;
+}
+
+.display-card > label {
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 700;
+  padding-bottom: 10px;
+}
+
+.display-muted {
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.preview-hint {
+  color: rgba(255, 255, 255, 0.70);
+}
+
+stacksidebar.sidebar {
+  background-color: transparent;
+}
+
+stacksidebar.sidebar list {
+  background-color: transparent;
+}
+
+stacksidebar.sidebar row {
+  color: rgba(255, 255, 255, 0.74);
+  background-color: transparent;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+stacksidebar.sidebar row:selected,
+stacksidebar.sidebar row:hover {
+  background-color: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.96);
+}
+
