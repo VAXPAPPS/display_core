@@ -1,5 +1,78 @@
 #include "ui/custom_headerbar.h"
 
+static const char *CUSTOM_HEADERBAR_CSS =
+    ".dc-headerbar {"
+    "  background:rgba(0, 0, 0, 0.08);"
+    "  border: 1px solid rgba(0, 0, 0, 0.08);"
+    "  border-radius: 18px;"
+    "  padding: 8px 10px 8px 16px;"
+    "  min-height: 26px;"
+    "}"
+    ".dc-window-btn {"
+    "  min-width: 16px;"
+    "  min-height: 16px;"
+    "  background-image: none;"
+    "  background-color: transparent;"
+    "  color: transparent;"
+    "  border-radius: 999px;"
+    "  padding: 0;"
+    "  margin: 0 4px;"
+    "  border: 1px solid transparent;"
+    "  box-shadow: inset 0 -1px 2px rgba(0,0,0,0.2);"
+    "}"
+    ".dc-window-btn:hover {"
+    "  background-image: none;"
+    "  box-shadow: inset 0 -1px 2px rgba(0,0,0,0.2), 0 0 6px rgba(255,255,255,0.15);"
+    "}"
+    ".dc-window-btn:active,"
+    ".dc-window-btn:checked,"
+    ".dc-window-btn:focus {"
+    "  background-image: none;"
+    "  color: transparent;"
+    "  outline: none;"
+    "}"
+    ".dc-btn-close {"
+    "  background-color: #ff5f57;"
+    "}"
+    ".dc-btn-close:hover {"
+    "  background-color: #ff3b30;"
+    "}"
+    ".dc-btn-minimize {"
+    "  background-color: #ffbd2e;"
+    "}"
+    ".dc-btn-minimize:hover {"
+    "  background-color: #f5a623;"
+    "}"
+    ".dc-btn-maximize {"
+    "  background-color: #28c840;"
+    "}"
+    ".dc-btn-maximize:hover {"
+    "  background-color: #1db954;"
+    "}";
+
+static void install_custom_headerbar_css(GtkWidget *widget) {
+    static gboolean installed = FALSE;
+    GtkCssProvider *provider;
+    GdkScreen *screen;
+
+    if (installed) {
+        return;
+    }
+
+    screen = gtk_widget_get_screen(widget);
+    if (screen == NULL) {
+        return;
+    }
+
+    provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(provider, CUSTOM_HEADERBAR_CSS, -1, NULL);
+    gtk_style_context_add_provider_for_screen(screen,
+                                              GTK_STYLE_PROVIDER(provider),
+                                              GTK_STYLE_PROVIDER_PRIORITY_USER);
+    g_object_unref(provider);
+    installed = TRUE;
+}
+
 static void on_close_clicked(GtkButton *button, gpointer user_data) {
     (void) button;
     gtk_window_close(GTK_WINDOW(user_data));
@@ -76,6 +149,7 @@ GtkWidget *dc_custom_headerbar_new(GtkWindow *window,
                      "button-press-event",
                      G_CALLBACK(on_headerbar_button_press),
                      window);
+    install_custom_headerbar_css(event_box);
 
     header_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
     context = gtk_widget_get_style_context(header_box);
