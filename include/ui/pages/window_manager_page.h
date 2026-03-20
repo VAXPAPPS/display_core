@@ -9,7 +9,6 @@ DcWindowManagerPage *dc_window_manager_page_new(void);
 void dc_window_manager_page_free(DcWindowManagerPage *page);
 GtkWidget *dc_window_manager_page_get_widget(DcWindowManagerPage *page);
 GtkWidget *dc_window_manager_page_get_floating_mode_switch(DcWindowManagerPage *page);
-GtkWidget *dc_window_manager_page_get_snap_to_edge_switch(DcWindowManagerPage *page);
 GtkWidget *dc_window_manager_page_get_snap_threshold_scale(DcWindowManagerPage *page);
 GtkWidget *dc_window_manager_page_get_snap_show_preview_switch(DcWindowManagerPage *page);
 GtkWidget *dc_window_manager_page_get_layout_combo(DcWindowManagerPage *page);

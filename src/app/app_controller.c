@@ -208,7 +208,6 @@ static void apply_display_edit_config_to_ui(DcAppController *app, const DcDispla
 
 static void apply_window_manager_config_to_ui(DcAppController *app, const DcWindowManagerConfig *config) {
     gtk_switch_set_active(GTK_SWITCH(dc_window_manager_page_get_floating_mode_switch(app->window_manager_page)), config->floating_mode);
-    gtk_switch_set_active(GTK_SWITCH(dc_window_manager_page_get_snap_to_edge_switch(app->window_manager_page)), config->snap_to_edge);
     gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_snap_threshold_scale(app->window_manager_page)), config->snap_threshold);
     gtk_switch_set_active(GTK_SWITCH(dc_window_manager_page_get_snap_show_preview_switch(app->window_manager_page)), config->snap_show_preview);
     gtk_combo_box_set_active_id(GTK_COMBO_BOX(dc_window_manager_page_get_layout_combo(app->window_manager_page)), config->desktop_layout);
@@ -290,7 +289,6 @@ static DcWindowManagerConfig *collect_window_manager_config_from_ui(DcAppControl
 
     config = dc_window_manager_config_new();
     config->floating_mode = gtk_switch_get_active(GTK_SWITCH(dc_window_manager_page_get_floating_mode_switch(app->window_manager_page)));
-    config->snap_to_edge = gtk_switch_get_active(GTK_SWITCH(dc_window_manager_page_get_snap_to_edge_switch(app->window_manager_page)));
     config->snap_threshold = (int) gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_snap_threshold_scale(app->window_manager_page)));
     config->snap_show_preview = gtk_switch_get_active(GTK_SWITCH(dc_window_manager_page_get_snap_show_preview_switch(app->window_manager_page)));
     layout = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_window_manager_page_get_layout_combo(app->window_manager_page)));
@@ -682,7 +680,6 @@ static void connect_display_edit_autosave_signals(DcAppController *app) {
 
 static void connect_window_manager_autosave_signals(DcAppController *app) {
     g_signal_connect(dc_window_manager_page_get_floating_mode_switch(app->window_manager_page), "notify::active", G_CALLBACK(on_window_manager_switch_active_changed), app);
-    g_signal_connect(dc_window_manager_page_get_snap_to_edge_switch(app->window_manager_page), "notify::active", G_CALLBACK(on_window_manager_switch_active_changed), app);
     g_signal_connect(dc_window_manager_page_get_snap_threshold_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
     g_signal_connect(dc_window_manager_page_get_snap_show_preview_switch(app->window_manager_page), "notify::active", G_CALLBACK(on_window_manager_switch_active_changed), app);
     g_signal_connect(dc_window_manager_page_get_layout_combo(app->window_manager_page), "changed", G_CALLBACK(on_window_manager_widget_changed), app);

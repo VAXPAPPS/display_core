@@ -105,7 +105,6 @@ DcWindowManagerConfig *dc_window_manager_config_new(void) {
 
     config = g_new0(DcWindowManagerConfig, 1);
     config->floating_mode = FALSE;
-    config->snap_to_edge = TRUE;
     config->snap_threshold = 20;
     config->snap_show_preview = TRUE;
     config->border_width = 2;
@@ -170,9 +169,6 @@ gboolean dc_window_manager_config_load(DcWindowManagerConfig **config, char **er
 
     if (g_key_file_has_key(key_file, "window-manager", "floating_mode", NULL)) {
         loaded->floating_mode = g_key_file_get_boolean(key_file, "window-manager", "floating_mode", NULL);
-    }
-    if (g_key_file_has_key(key_file, "window-manager", "snap_to_edge", NULL)) {
-        loaded->snap_to_edge = g_key_file_get_boolean(key_file, "window-manager", "snap_to_edge", NULL);
     }
     if (g_key_file_has_key(key_file, "window-manager", "snap_threshold", NULL)) {
         loaded->snap_threshold = g_key_file_get_integer(key_file, "window-manager", "snap_threshold", NULL);
@@ -247,7 +243,6 @@ gboolean dc_window_manager_config_save(const DcWindowManagerConfig *config, char
 
     key_file = g_key_file_new();
     g_key_file_set_boolean(key_file, "window-manager", "floating_mode", config->floating_mode);
-    g_key_file_set_boolean(key_file, "window-manager", "snap_to_edge", config->snap_to_edge);
     g_key_file_set_integer(key_file, "window-manager", "snap_threshold", config->snap_threshold);
     g_key_file_set_boolean(key_file, "window-manager", "snap_show_preview", config->snap_show_preview);
     g_key_file_set_integer(key_file, "window-manager", "border_width", config->border_width);
@@ -285,7 +280,6 @@ gboolean dc_window_manager_apply_config(const DcWindowManagerConfig *config, cha
     }
 
     if (!apply_boolean_command("floating_mode", config->floating_mode, &local_error) ||
-        !apply_boolean_command("snap_to_edge", config->snap_to_edge, &local_error) ||
         !apply_int_command("snap_threshold", config->snap_threshold, &local_error) ||
         !apply_boolean_command("snap_show_preview", config->snap_show_preview, &local_error) ||
         !apply_int_command("border_width", config->border_width, &local_error) ||

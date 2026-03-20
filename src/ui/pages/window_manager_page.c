@@ -3,7 +3,6 @@
 struct _DcWindowManagerPage {
     GtkWidget *root;
     GtkWidget *floating_mode_switch;
-    GtkWidget *snap_to_edge_switch;
     GtkWidget *snap_threshold_scale;
     GtkWidget *snap_show_preview_switch;
     GtkWidget *layout_combo;
@@ -290,7 +289,6 @@ DcWindowManagerPage *dc_window_manager_page_new(void) {
     behavior_card = create_card();
     behavior_box = gtk_bin_get_child(GTK_BIN(behavior_card));
     page->floating_mode_switch = gtk_switch_new();
-    page->snap_to_edge_switch = gtk_switch_new();
     page->snap_threshold_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 80.0, 1.0);
     page->snap_show_preview_switch = gtk_switch_new();
     page->layout_combo = gtk_combo_box_text_new();
@@ -386,9 +384,6 @@ DcWindowManagerPage *dc_window_manager_page_new(void) {
     gtk_box_pack_start(GTK_BOX(behavior_box), create_setting_row("Floating Mode",
                                                                  "Enable PoisonBlade floating mode for free window movement.",
                                                                  page->floating_mode_switch), FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(behavior_box), create_setting_row("Snap To Edge",
-                                                                 "Snap windows to monitor edges and nearby windows.",
-                                                                 page->snap_to_edge_switch), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(behavior_box), create_setting_row("Snap Threshold",
                                                                  "Control edge snap sensitivity in pixels.",
                                                                  page->snap_threshold_scale), FALSE, FALSE, 0);
@@ -490,7 +485,6 @@ void dc_window_manager_page_free(DcWindowManagerPage *page) {
 
 GtkWidget *dc_window_manager_page_get_widget(DcWindowManagerPage *page) { return page->root; }
 GtkWidget *dc_window_manager_page_get_floating_mode_switch(DcWindowManagerPage *page) { return page->floating_mode_switch; }
-GtkWidget *dc_window_manager_page_get_snap_to_edge_switch(DcWindowManagerPage *page) { return page->snap_to_edge_switch; }
 GtkWidget *dc_window_manager_page_get_snap_threshold_scale(DcWindowManagerPage *page) { return page->snap_threshold_scale; }
 GtkWidget *dc_window_manager_page_get_snap_show_preview_switch(DcWindowManagerPage *page) { return page->snap_show_preview_switch; }
 GtkWidget *dc_window_manager_page_get_layout_combo(DcWindowManagerPage *page) { return page->layout_combo; }

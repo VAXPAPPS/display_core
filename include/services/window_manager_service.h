@@ -5,7 +5,6 @@
 
 typedef struct {
     gboolean floating_mode;
-    gboolean snap_to_edge;
     int snap_threshold;
     gboolean snap_show_preview;
     int border_width;
