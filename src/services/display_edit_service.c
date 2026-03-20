@@ -30,6 +30,7 @@ DcDisplayEditConfig *dc_display_edit_config_new(void) {
 
     config = g_new0(DcDisplayEditConfig, 1);
     config->night_light_enabled = FALSE;
+    config->night_light_use_schedule = TRUE;
     config->night_light_temperature = 4200;
     config->night_light_schedule = g_strdup("sunset");
     config->night_light_custom_start_hour = 21;
@@ -89,6 +90,9 @@ gboolean dc_display_edit_config_load(DcDisplayEditConfig **config, char **error_
     if (g_key_file_has_key(key_file, "display-edit", "night_light_enabled", NULL)) {
         loaded->night_light_enabled = g_key_file_get_boolean(key_file, "display-edit", "night_light_enabled", NULL);
     }
+    if (g_key_file_has_key(key_file, "display-edit", "night_light_use_schedule", NULL)) {
+        loaded->night_light_use_schedule = g_key_file_get_boolean(key_file, "display-edit", "night_light_use_schedule", NULL);
+    }
     if (g_key_file_has_key(key_file, "display-edit", "night_light_temperature", NULL)) {
         loaded->night_light_temperature = g_key_file_get_integer(key_file, "display-edit", "night_light_temperature", NULL);
     }
@@ -145,6 +149,7 @@ gboolean dc_display_edit_config_save(const DcDisplayEditConfig *config, char **e
 
     key_file = g_key_file_new();
     g_key_file_set_boolean(key_file, "display-edit", "night_light_enabled", config->night_light_enabled);
+    g_key_file_set_boolean(key_file, "display-edit", "night_light_use_schedule", config->night_light_use_schedule);
     g_key_file_set_integer(key_file, "display-edit", "night_light_temperature", config->night_light_temperature);
     g_key_file_set_string(key_file, "display-edit", "night_light_schedule", config->night_light_schedule != NULL ? config->night_light_schedule : "sunset");
     g_key_file_set_integer(key_file, "display-edit", "night_light_custom_start_hour", config->night_light_custom_start_hour);

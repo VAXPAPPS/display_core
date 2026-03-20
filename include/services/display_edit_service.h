@@ -5,6 +5,7 @@
 
 typedef struct {
     gboolean night_light_enabled;
+    gboolean night_light_use_schedule;
     int night_light_temperature;
     char *night_light_schedule;
     int night_light_custom_start_hour;

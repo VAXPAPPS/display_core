@@ -129,6 +129,10 @@ static gboolean should_enable_night_light(const DcDisplayEditConfig *config) {
         return FALSE;
     }
 
+    if (!config->night_light_use_schedule) {
+        return TRUE;
+    }
+
     if (g_strcmp0(config->night_light_schedule, "always") == 0) {
         return TRUE;
     }

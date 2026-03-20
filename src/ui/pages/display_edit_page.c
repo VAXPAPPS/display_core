@@ -3,10 +3,12 @@
 struct _DcDisplayEditPage {
     GtkWidget *root;
     GtkWidget *night_light_switch;
+    GtkWidget *night_light_use_schedule_switch;
     GtkWidget *night_light_temperature_scale;
     GtkWidget *night_light_schedule_combo;
     GtkWidget *night_light_custom_start_spin;
     GtkWidget *night_light_custom_end_spin;
+    GtkWidget *night_light_status_label;
     GtkWidget *vrr_switch;
     GtkWidget *vrr_status_label;
     GtkWidget *adaptive_brightness_switch;
@@ -205,12 +207,16 @@ DcDisplayEditPage *dc_display_edit_page_new(void) {
     night_card = create_card();
     night_box = gtk_bin_get_child(GTK_BIN(night_card));
     page->night_light_switch = gtk_switch_new();
+    page->night_light_use_schedule_switch = gtk_switch_new();
     page->night_light_temperature_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 2500.0, 6500.0, 100.0);
     page->night_light_schedule_combo = gtk_combo_box_text_new();
     custom_start_adjustment = gtk_adjustment_new(21.0, 0.0, 23.0, 1.0, 1.0, 0.0);
     custom_end_adjustment = gtk_adjustment_new(6.0, 0.0, 23.0, 1.0, 1.0, 0.0);
     page->night_light_custom_start_spin = gtk_spin_button_new(GTK_ADJUSTMENT(custom_start_adjustment), 1.0, 0);
     page->night_light_custom_end_spin = gtk_spin_button_new(GTK_ADJUSTMENT(custom_end_adjustment), 1.0, 0);
+    page->night_light_status_label = gtk_label_new("Night Light status: disabled.");
+    gtk_widget_set_halign(page->night_light_status_label, GTK_ALIGN_START);
+    add_css_class(page->night_light_status_label, "dedit-status-note");
     page->vrr_switch = gtk_switch_new();
     page->vrr_status_label = gtk_label_new("VRR status: checking runtime support...");
     gtk_widget_set_halign(page->vrr_status_label, GTK_ALIGN_START);
@@ -247,6 +253,12 @@ DcDisplayEditPage *dc_display_edit_page_new(void) {
                        FALSE,
                        FALSE,
                        0);
+    gtk_box_pack_start(GTK_BOX(night_box), create_setting_row("Use Time Schedule",
+                                                              "When disabled, Night Light applies immediately and ignores the configured schedule.",
+                                                              page->night_light_use_schedule_switch),
+                       FALSE,
+                       FALSE,
+                       0);
     gtk_box_pack_start(GTK_BOX(night_box), create_setting_row("Color Temperature",
                                                               "Tune the warmth target used when night light is active.",
                                                               page->night_light_temperature_scale),
@@ -271,6 +283,7 @@ DcDisplayEditPage *dc_display_edit_page_new(void) {
                        FALSE,
                        FALSE,
                        0);
+    gtk_box_pack_start(GTK_BOX(night_box), page->night_light_status_label, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(night_box), create_setting_row("Variable Refresh Rate",
                                                               "Enable VRR on outputs and drivers that expose a compatible runtime property.",
                                                               page->vrr_switch),
@@ -318,6 +331,10 @@ GtkWidget *dc_display_edit_page_get_night_light_switch(DcDisplayEditPage *page) 
     return page->night_light_switch;
 }
 
+GtkWidget *dc_display_edit_page_get_night_light_use_schedule_switch(DcDisplayEditPage *page) {
+    return page->night_light_use_schedule_switch;
+}
+
 GtkWidget *dc_display_edit_page_get_night_light_temperature_scale(DcDisplayEditPage *page) {
     return page->night_light_temperature_scale;
 }
@@ -332,6 +349,10 @@ GtkWidget *dc_display_edit_page_get_night_light_custom_start_spin(DcDisplayEditP
 
 GtkWidget *dc_display_edit_page_get_night_light_custom_end_spin(DcDisplayEditPage *page) {
     return page->night_light_custom_end_spin;
+}
+
+GtkWidget *dc_display_edit_page_get_night_light_status_label(DcDisplayEditPage *page) {
+    return page->night_light_status_label;
 }
 
 GtkWidget *dc_display_edit_page_get_vrr_switch(DcDisplayEditPage *page) {
