@@ -79,16 +79,44 @@ static void set_status(DcAppController *app, const char *message) {
 }
 
 static void configure_display_edit_capabilities(DcAppController *app) {
-    gboolean vrr_supported = FALSE;
+    DcVrrSupportInfo vrr_info;
     char *error_message = NULL;
     GtkWidget *vrr_switch;
+    const char *status_text;
 
     vrr_switch = dc_display_edit_page_get_vrr_switch(app->display_edit_page);
-    if (dc_xrandr_service_has_vrr_support(app->service, &vrr_supported, &error_message) && vrr_supported) {
-        gtk_widget_set_sensitive(vrr_switch, TRUE);
-        gtk_widget_set_tooltip_text(vrr_switch, "Variable Refresh Rate is available on at least one connected output.");
+    if (!dc_xrandr_service_get_vrr_support_info(app->service, &vrr_info, &error_message)) {
+        gtk_widget_set_sensitive(vrr_switch, FALSE);
+        gtk_widget_set_tooltip_text(vrr_switch, "Variable Refresh Rate support could not be queried.");
         gtk_label_set_text(GTK_LABEL(dc_display_edit_page_get_vrr_status_label(app->display_edit_page)),
-                           "VRR status: available on current connected outputs.");
+                           "VRR status: support query failed.");
+        g_free(error_message);
+        return;
+    }
+
+    if (vrr_info.any_writable) {
+        gtk_widget_set_sensitive(vrr_switch, TRUE);
+        gtk_widget_set_tooltip_text(vrr_switch, "Variable Refresh Rate can be controlled on at least one connected output.");
+        if (gtk_switch_get_active(GTK_SWITCH(vrr_switch))) {
+            status_text = "VRR status: enabled on writable supported outputs.";
+        } else {
+            status_text = "VRR status: available but currently disabled by policy.";
+        }
+        gtk_label_set_text(GTK_LABEL(dc_display_edit_page_get_vrr_status_label(app->display_edit_page)), status_text);
+        g_free(error_message);
+        return;
+    }
+
+    if (vrr_info.any_supported) {
+        char *message;
+
+        gtk_widget_set_sensitive(vrr_switch, FALSE);
+        gtk_widget_set_tooltip_text(vrr_switch, "Connected outputs expose VRR-related properties, but none are writable through the current XRandR path.");
+        message = g_strdup_printf("VRR status: supported on %u/%u outputs, but no writable control is exposed.",
+                                  vrr_info.supported_outputs,
+                                  vrr_info.connected_outputs);
+        gtk_label_set_text(GTK_LABEL(dc_display_edit_page_get_vrr_status_label(app->display_edit_page)), message);
+        g_free(message);
         g_free(error_message);
         return;
     }

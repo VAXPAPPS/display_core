@@ -702,18 +702,35 @@ gboolean dc_xrandr_service_reset_display_edit(DcXrandrService *service,
 gboolean dc_xrandr_service_has_vrr_support(DcXrandrService *service,
                                            gboolean *supported,
                                            char **error_message) {
-    XRRScreenResources *resources;
-    gboolean found;
-    int i;
+    DcVrrSupportInfo info;
+
+    if (!dc_xrandr_service_get_vrr_support_info(service, &info, error_message)) {
+        return FALSE;
+    }
 
     if (supported != NULL) {
-        *supported = FALSE;
+        *supported = info.any_supported;
     }
+    return TRUE;
+}
+
+gboolean dc_xrandr_service_get_vrr_support_info(DcXrandrService *service,
+                                                DcVrrSupportInfo *info,
+                                                char **error_message) {
+    XRRScreenResources *resources;
+    DcVrrSupportInfo local_info;
+    int i;
 
     if (service == NULL) {
         set_error(error_message, "Display service is not initialized.");
         return FALSE;
     }
+
+    local_info.any_supported = FALSE;
+    local_info.any_writable = FALSE;
+    local_info.connected_outputs = 0;
+    local_info.supported_outputs = 0;
+    local_info.writable_outputs = 0;
 
     resources = XRRGetScreenResourcesCurrent(service->display, service->root);
     if (resources == NULL) {
@@ -721,28 +738,38 @@ gboolean dc_xrandr_service_has_vrr_support(DcXrandrService *service,
         return FALSE;
     }
 
-    found = FALSE;
     for (i = 0; i < resources->noutput; i++) {
         XRROutputInfo *output_info;
+        gboolean has_supported_property;
+        gboolean has_writable_property;
 
         output_info = XRRGetOutputInfo(service->display, resources, resources->outputs[i]);
         if (output_info == NULL) {
             continue;
         }
 
-        if (output_info->connection == RR_Connected &&
-            output_has_vrr_property(service->display, resources->outputs[i], FALSE, NULL)) {
-            found = TRUE;
-            XRRFreeOutputInfo(output_info);
-            break;
+        if (output_info->connection == RR_Connected) {
+            local_info.connected_outputs++;
+            has_supported_property = output_has_vrr_property(service->display, resources->outputs[i], FALSE, NULL);
+            has_writable_property = output_has_vrr_property(service->display, resources->outputs[i], TRUE, NULL);
+
+            if (has_supported_property) {
+                local_info.supported_outputs++;
+                local_info.any_supported = TRUE;
+            }
+
+            if (has_writable_property) {
+                local_info.writable_outputs++;
+                local_info.any_writable = TRUE;
+            }
         }
 
         XRRFreeOutputInfo(output_info);
     }
 
     XRRFreeScreenResources(resources);
-    if (supported != NULL) {
-        *supported = found;
+    if (info != NULL) {
+        *info = local_info;
     }
     return TRUE;
 }

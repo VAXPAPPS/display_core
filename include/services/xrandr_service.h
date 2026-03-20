@@ -9,6 +9,14 @@ typedef struct {
     Window root;
 } DcXrandrService;
 
+typedef struct {
+    gboolean any_supported;
+    gboolean any_writable;
+    guint connected_outputs;
+    guint supported_outputs;
+    guint writable_outputs;
+} DcVrrSupportInfo;
+
 DcXrandrService *dc_xrandr_service_new(char **error_message);
 void dc_xrandr_service_free(DcXrandrService *service);
 
@@ -23,6 +31,9 @@ gboolean dc_xrandr_service_apply_display_edit(DcXrandrService *service,
                                               char **error_message);
 gboolean dc_xrandr_service_reset_display_edit(DcXrandrService *service,
                                               char **error_message);
+gboolean dc_xrandr_service_get_vrr_support_info(DcXrandrService *service,
+                                                DcVrrSupportInfo *info,
+                                                char **error_message);
 gboolean dc_xrandr_service_has_vrr_support(DcXrandrService *service,
                                            gboolean *supported,
                                            char **error_message);
