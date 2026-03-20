@@ -7,6 +7,7 @@
 #include "services/window_manager_service.h"
 #include "services/xrandr_service.h"
 #include "ui/output_row.h"
+#include "ui/custom_headerbar.h"
 #include "ui/pages/compositor_page.h"
 #include "ui/pages/display_edit_page.h"
 #include "ui/pages/display_page.h"
@@ -1289,8 +1290,7 @@ static void on_apply_clicked(GtkButton *button, gpointer user_data) {
 static void activate(GtkApplication *gtk_app, gpointer user_data) {
     DcAppController *app = user_data;
     GtkWidget *root_box;
-    GtkWidget *topbar_frame;
-    GtkWidget *topbar_box;
+    GtkWidget *headerbar;
     GtkWidget *stack_switcher;
     GtkWidget *stack_frame;
 
@@ -1302,6 +1302,7 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     app->window = gtk_application_window_new(gtk_app);
     gtk_window_set_title(GTK_WINDOW(app->window), "Display Settings");
     gtk_window_set_default_size(GTK_WINDOW(app->window), 980, 760);
+    gtk_window_set_decorated(GTK_WINDOW(app->window), FALSE);
     gtk_container_set_border_width(GTK_CONTAINER(app->window), 12);
     gtk_widget_set_name(app->window, "display-core-window");
     add_css_class(app->window, "app-window");
@@ -1317,34 +1318,28 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     }
 
     root_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
-    topbar_frame = gtk_frame_new(NULL);
-    topbar_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
     stack_switcher = gtk_stack_switcher_new();
     stack_frame = gtk_frame_new(NULL);
     app->stack = gtk_stack_new();
     gtk_stack_set_transition_type(GTK_STACK(app->stack), GTK_STACK_TRANSITION_TYPE_CROSSFADE);
     gtk_stack_set_transition_duration(GTK_STACK(app->stack), 220);
     gtk_stack_switcher_set_stack(GTK_STACK_SWITCHER(stack_switcher), GTK_STACK(app->stack));
-    gtk_widget_set_halign(stack_switcher, GTK_ALIGN_CENTER);
+    gtk_widget_set_halign(stack_switcher, GTK_ALIGN_FILL);
     gtk_widget_set_hexpand(stack_switcher, TRUE);
+    headerbar = dc_custom_headerbar_new(GTK_WINDOW(app->window), "Display Settings", stack_switcher);
 
     add_css_class(root_box, "app-shell");
-    add_css_class(topbar_frame, "topbar-card");
     add_css_class(stack_switcher, "topbar-switcher");
     add_css_class(stack_frame, "content-card");
 
     gtk_container_add(GTK_CONTAINER(app->window), root_box);
-    gtk_container_add(GTK_CONTAINER(topbar_frame), topbar_box);
     gtk_container_add(GTK_CONTAINER(stack_frame), app->stack);
 
-    gtk_frame_set_shadow_type(GTK_FRAME(topbar_frame), GTK_SHADOW_NONE);
-    gtk_container_set_border_width(GTK_CONTAINER(topbar_frame), 0);
     gtk_frame_set_shadow_type(GTK_FRAME(stack_frame), GTK_SHADOW_NONE);
     gtk_container_set_border_width(GTK_CONTAINER(stack_frame), 0);
 
-    gtk_box_pack_start(GTK_BOX(root_box), topbar_frame, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(root_box), headerbar, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(root_box), stack_frame, TRUE, TRUE, 0);
-    gtk_box_pack_start(GTK_BOX(topbar_box), stack_switcher, TRUE, TRUE, 0);
 
     gtk_stack_add_titled(GTK_STACK(app->stack),
                          dc_display_page_get_widget(app->display_page),

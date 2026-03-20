@@ -1,0 +1,117 @@
+#include "ui/custom_headerbar.h"
+
+static void on_close_clicked(GtkButton *button, gpointer user_data) {
+    (void) button;
+    gtk_window_close(GTK_WINDOW(user_data));
+}
+
+static void on_minimize_clicked(GtkButton *button, gpointer user_data) {
+    (void) button;
+    gtk_window_iconify(GTK_WINDOW(user_data));
+}
+
+static void on_maximize_clicked(GtkButton *button, gpointer user_data) {
+    GtkWindow *window;
+
+    (void) button;
+    window = GTK_WINDOW(user_data);
+    if (gtk_window_is_maximized(window)) {
+        gtk_window_unmaximize(window);
+    } else {
+        gtk_window_maximize(window);
+    }
+}
+
+static gboolean on_headerbar_button_press(GtkWidget *widget,
+                                          GdkEventButton *event,
+                                          gpointer user_data) {
+    (void) widget;
+
+    if (event->type == GDK_BUTTON_PRESS && event->button == 1) {
+        gtk_window_begin_move_drag(GTK_WINDOW(user_data),
+                                   event->button,
+                                   event->x_root,
+                                   event->y_root,
+                                   event->time);
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+static GtkWidget *create_window_button(const char *css_class,
+                                       GCallback callback,
+                                       gpointer user_data,
+                                       const char *tooltip) {
+    GtkWidget *button;
+    GtkStyleContext *context;
+
+    button = gtk_button_new();
+    context = gtk_widget_get_style_context(button);
+    gtk_style_context_add_class(context, "dc-window-btn");
+    gtk_style_context_add_class(context, css_class);
+    gtk_widget_set_can_focus(button, FALSE);
+    gtk_widget_set_tooltip_text(button, tooltip);
+    g_signal_connect(button, "clicked", callback, user_data);
+    return button;
+}
+
+GtkWidget *dc_custom_headerbar_new(GtkWindow *window,
+                                   const char *title_text,
+                                   GtkWidget *center_widget) {
+    GtkWidget *event_box;
+    GtkWidget *header_box;
+    GtkWidget *center_box;
+    GtkWidget *controls_box;
+    GtkWidget *minimize_button;
+    GtkWidget *maximize_button;
+    GtkWidget *close_button;
+    GtkStyleContext *context;
+
+    (void) title_text;
+
+    event_box = gtk_event_box_new();
+    gtk_widget_add_events(event_box, GDK_BUTTON_PRESS_MASK);
+    g_signal_connect(event_box,
+                     "button-press-event",
+                     G_CALLBACK(on_headerbar_button_press),
+                     window);
+
+    header_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    context = gtk_widget_get_style_context(header_box);
+    gtk_style_context_add_class(context, "dc-headerbar");
+    gtk_container_add(GTK_CONTAINER(event_box), header_box);
+
+    center_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(center_box, TRUE);
+    gtk_widget_set_halign(center_box, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(center_box, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_start(center_box, 8);
+    if (center_widget != NULL) {
+        gtk_box_pack_start(GTK_BOX(center_box), center_widget, FALSE, FALSE, 0);
+    }
+
+    controls_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_margin_end(controls_box, 6);
+    gtk_widget_set_valign(controls_box, GTK_ALIGN_CENTER);
+    minimize_button = create_window_button("dc-btn-minimize",
+                                           G_CALLBACK(on_minimize_clicked),
+                                           window,
+                                           "Minimize");
+    maximize_button = create_window_button("dc-btn-maximize",
+                                           G_CALLBACK(on_maximize_clicked),
+                                           window,
+                                           "Maximize");
+    close_button = create_window_button("dc-btn-close",
+                                        G_CALLBACK(on_close_clicked),
+                                        window,
+                                        "Close");
+    gtk_box_pack_start(GTK_BOX(controls_box), minimize_button, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(controls_box), maximize_button, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(controls_box), close_button, FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(header_box), center_box, TRUE, TRUE, 0);
+    gtk_box_pack_end(GTK_BOX(header_box), controls_box, FALSE, FALSE, 0);
+
+    return event_box;
+}
