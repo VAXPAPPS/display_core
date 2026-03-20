@@ -29,6 +29,15 @@ struct _DcCompositorPage {
 /*  CSS مدمج — Dark Glassmorphism متوافق مع ستايل التطبيق              */
 /* ------------------------------------------------------------------ */
 static const char *COMPOSITOR_CSS =
+    ".comp-scroll-hidden scrollbar {"
+    "  opacity: 0;"
+    "  min-width: 0;"
+    "  min-height: 0;"
+    "}"
+    ".comp-scroll-hidden scrollbar slider {"
+    "  min-width: 0;"
+    "  min-height: 0;"
+    "}"
     ".comp-shell {"
     "  padding: 20px 18px 48px;"
     "}"
@@ -246,6 +255,7 @@ DcCompositorPage *dc_compositor_page_new(void) {
     GtkWidget *content  = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
     GtkWidget *scroller = gtk_scrolled_window_new(NULL, NULL);
     add_css_class(content, "comp-shell");
+    add_css_class(scroller, "comp-scroll-hidden");
 
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);

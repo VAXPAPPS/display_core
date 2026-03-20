@@ -79,7 +79,7 @@ button {
 }
 
 button:hover {
-  background-color: rgba(255, 255, 255, 0.16);
+  background-color: rgba(86, 110, 138, 0.16);
 }
 
 .suggested-action {
@@ -90,7 +90,7 @@ entry,
 combobox box,
 spinbutton {
   color: rgba(255, 255, 255, 0.95);
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: rgba(0, 0, 0, 0.24);
   border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 12px;
 }

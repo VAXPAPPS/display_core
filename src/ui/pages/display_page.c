@@ -23,6 +23,15 @@ struct _DcDisplayPage {
 /*  CSS مدمج — Dark Glassmorphism متوافق مع ستايل التطبيق              */
 /* ------------------------------------------------------------------ */
 static const char *DISPLAY_CSS =
+    ".disp-scroll-hidden scrollbar {"
+    "  opacity: 0;"
+    "  min-width: 0;"
+    "  min-height: 0;"
+    "}"
+    ".disp-scroll-hidden scrollbar slider {"
+    "  min-width: 0;"
+    "  min-height: 0;"
+    "}"
     ".disp-shell {"
     "  padding: 20px 18px 24px;"
     "}"
@@ -202,6 +211,7 @@ DcDisplayPage *dc_display_page_new(GtkWidget *preview_widget) {
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     gtk_scrolled_window_set_overlay_scrolling(GTK_SCROLLED_WINDOW(scroller), TRUE);
+    add_css_class(scroller, "disp-scroll-hidden");
     page->root = scroller;
     g_signal_connect(page->root, "realize", G_CALLBACK(on_realize), NULL);
 
