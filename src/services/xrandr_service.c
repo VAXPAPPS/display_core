@@ -2,6 +2,26 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <X11/Xatom.h>
+
+typedef struct {
+    const char *name;
+    gboolean writable;
+} DcVrrPropertyCandidate;
+
+static const DcVrrPropertyCandidate vrr_property_candidates[] = {
+    { "VRR_ENABLED", TRUE },
+    { "vrr_enabled", TRUE },
+    { "VariableRefresh", TRUE },
+    { "Variable Refresh Rate", TRUE },
+    { "adaptive_sync", TRUE },
+    { "AdaptiveSync", TRUE },
+    { "vrr_capable", FALSE },
+    { "VRR_CAPABLE", FALSE },
+    { "adaptive_sync_capable", FALSE },
+    { "Adaptive Sync", FALSE },
+    { "freesync_capable", FALSE }
+};
 
 static XRRModeInfo *find_mode_info(XRRScreenResources *resources, RRMode mode) {
     int i;
@@ -236,6 +256,106 @@ static gboolean apply_gamma_to_output(Display *display,
     XRRSetCrtcGamma(display, output_info->crtc, gamma);
     XRRFreeGamma(gamma);
     (void) resources;
+    return TRUE;
+}
+
+static gboolean property_name_matches(const char *property_name,
+                                      const char *candidate_name) {
+    return g_ascii_strcasecmp(property_name, candidate_name) == 0;
+}
+
+static gboolean is_vrr_property_name(const char *property_name,
+                                     gboolean *writable_candidate) {
+    guint i;
+
+    if (writable_candidate != NULL) {
+        *writable_candidate = FALSE;
+    }
+
+    if (property_name == NULL) {
+        return FALSE;
+    }
+
+    for (i = 0; i < G_N_ELEMENTS(vrr_property_candidates); i++) {
+        if (property_name_matches(property_name, vrr_property_candidates[i].name)) {
+            if (writable_candidate != NULL) {
+                *writable_candidate = vrr_property_candidates[i].writable;
+            }
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static gboolean output_has_vrr_property(Display *display,
+                                        RROutput output,
+                                        gboolean writable_only,
+                                        Atom *property_atom) {
+    Atom *properties;
+    int property_count;
+    gboolean found;
+    int i;
+
+    properties = XRRListOutputProperties(display, output, &property_count);
+    if (properties == NULL) {
+        return FALSE;
+    }
+
+    found = FALSE;
+    for (i = 0; i < property_count; i++) {
+        char *property_name;
+        gboolean writable_candidate;
+
+        property_name = XGetAtomName(display, properties[i]);
+        if (property_name == NULL) {
+            continue;
+        }
+
+        if (is_vrr_property_name(property_name, &writable_candidate) &&
+            (!writable_only || writable_candidate)) {
+            found = TRUE;
+            if (property_atom != NULL) {
+                *property_atom = properties[i];
+            }
+            XFree(property_name);
+            break;
+        }
+
+        XFree(property_name);
+    }
+
+    XFree(properties);
+    return found;
+}
+
+static gboolean set_output_boolean_property(Display *display,
+                                            RROutput output,
+                                            Atom property,
+                                            long value) {
+    XRRPropertyInfo *property_info;
+    long property_value;
+
+    property_info = XRRQueryOutputProperty(display, output, property);
+    if (property_info == NULL) {
+        return FALSE;
+    }
+
+    if (property_info->immutable) {
+        XFree(property_info);
+        return FALSE;
+    }
+
+    property_value = value;
+    XRRChangeOutputProperty(display,
+                            output,
+                            property,
+                            XA_INTEGER,
+                            32,
+                            PropModeReplace,
+                            (unsigned char *) &property_value,
+                            1);
+    XFree(property_info);
     return TRUE;
 }
 
@@ -492,6 +612,7 @@ gboolean dc_xrandr_service_apply_display_edit(DcXrandrService *service,
     XRRScreenResources *resources;
     GString *errors;
     gboolean success;
+    gboolean vrr_supported;
     double red_scale;
     double green_scale;
     double blue_scale;
@@ -502,6 +623,11 @@ gboolean dc_xrandr_service_apply_display_edit(DcXrandrService *service,
     if (service == NULL || config == NULL) {
         set_error(error_message, "Display service or display edit config is missing.");
         return FALSE;
+    }
+
+    vrr_supported = FALSE;
+    if (dc_xrandr_service_has_vrr_support(service, &vrr_supported, NULL) && vrr_supported) {
+        dc_xrandr_service_apply_vrr(service, config->vrr_enabled, NULL);
     }
 
     resources = XRRGetScreenResourcesCurrent(service->display, service->root);
@@ -571,4 +697,100 @@ gboolean dc_xrandr_service_reset_display_edit(DcXrandrService *service,
     success = dc_xrandr_service_apply_display_edit(service, config, error_message);
     dc_display_edit_config_free(config);
     return success;
+}
+
+gboolean dc_xrandr_service_has_vrr_support(DcXrandrService *service,
+                                           gboolean *supported,
+                                           char **error_message) {
+    XRRScreenResources *resources;
+    gboolean found;
+    int i;
+
+    if (supported != NULL) {
+        *supported = FALSE;
+    }
+
+    if (service == NULL) {
+        set_error(error_message, "Display service is not initialized.");
+        return FALSE;
+    }
+
+    resources = XRRGetScreenResourcesCurrent(service->display, service->root);
+    if (resources == NULL) {
+        set_error(error_message, "Failed to query screen resources for VRR support.");
+        return FALSE;
+    }
+
+    found = FALSE;
+    for (i = 0; i < resources->noutput; i++) {
+        XRROutputInfo *output_info;
+
+        output_info = XRRGetOutputInfo(service->display, resources, resources->outputs[i]);
+        if (output_info == NULL) {
+            continue;
+        }
+
+        if (output_info->connection == RR_Connected &&
+            output_has_vrr_property(service->display, resources->outputs[i], FALSE, NULL)) {
+            found = TRUE;
+            XRRFreeOutputInfo(output_info);
+            break;
+        }
+
+        XRRFreeOutputInfo(output_info);
+    }
+
+    XRRFreeScreenResources(resources);
+    if (supported != NULL) {
+        *supported = found;
+    }
+    return TRUE;
+}
+
+gboolean dc_xrandr_service_apply_vrr(DcXrandrService *service,
+                                     gboolean enabled,
+                                     char **error_message) {
+    XRRScreenResources *resources;
+    gboolean changed_any;
+    int i;
+
+    if (service == NULL) {
+        set_error(error_message, "Display service is not initialized.");
+        return FALSE;
+    }
+
+    resources = XRRGetScreenResourcesCurrent(service->display, service->root);
+    if (resources == NULL) {
+        set_error(error_message, "Failed to query screen resources for VRR changes.");
+        return FALSE;
+    }
+
+    changed_any = FALSE;
+    for (i = 0; i < resources->noutput; i++) {
+        XRROutputInfo *output_info;
+        Atom property;
+
+        output_info = XRRGetOutputInfo(service->display, resources, resources->outputs[i]);
+        if (output_info == NULL) {
+            continue;
+        }
+
+        if (output_info->connection == RR_Connected &&
+            output_has_vrr_property(service->display, resources->outputs[i], TRUE, &property) &&
+            set_output_boolean_property(service->display, resources->outputs[i], property, enabled ? 1L : 0L)) {
+            changed_any = TRUE;
+        }
+
+        XRRFreeOutputInfo(output_info);
+    }
+
+    XSync(service->display, False);
+    XRRFreeScreenResources(resources);
+
+    if (!changed_any) {
+        set_error(error_message, "No writable VRR property was found on connected outputs.");
+        return FALSE;
+    }
+
+    return TRUE;
 }

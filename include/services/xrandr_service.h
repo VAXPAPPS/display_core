@@ -23,5 +23,11 @@ gboolean dc_xrandr_service_apply_display_edit(DcXrandrService *service,
                                               char **error_message);
 gboolean dc_xrandr_service_reset_display_edit(DcXrandrService *service,
                                               char **error_message);
+gboolean dc_xrandr_service_has_vrr_support(DcXrandrService *service,
+                                           gboolean *supported,
+                                           char **error_message);
+gboolean dc_xrandr_service_apply_vrr(DcXrandrService *service,
+                                     gboolean enabled,
+                                     char **error_message);
 
 #endif

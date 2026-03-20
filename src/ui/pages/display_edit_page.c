@@ -7,6 +7,7 @@ struct _DcDisplayEditPage {
     GtkWidget *night_light_schedule_combo;
     GtkWidget *night_light_custom_start_spin;
     GtkWidget *night_light_custom_end_spin;
+    GtkWidget *vrr_switch;
     GtkWidget *adaptive_brightness_switch;
     GtkWidget *gamma_scale;
     GtkWidget *vibrance_scale;
@@ -204,6 +205,7 @@ DcDisplayEditPage *dc_display_edit_page_new(void) {
     custom_end_adjustment = gtk_adjustment_new(6.0, 0.0, 23.0, 1.0, 1.0, 0.0);
     page->night_light_custom_start_spin = gtk_spin_button_new(GTK_ADJUSTMENT(custom_start_adjustment), 1.0, 0);
     page->night_light_custom_end_spin = gtk_spin_button_new(GTK_ADJUSTMENT(custom_end_adjustment), 1.0, 0);
+    page->vrr_switch = gtk_switch_new();
 
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->night_light_schedule_combo), "sunset", "Sunset to Sunrise");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(page->night_light_schedule_combo), "custom", "Custom Schedule");
@@ -257,6 +259,12 @@ DcDisplayEditPage *dc_display_edit_page_new(void) {
     gtk_box_pack_start(GTK_BOX(night_box), create_setting_row("Custom End Hour",
                                                               "Used when Schedule is set to Custom Schedule. Crossing midnight is supported.",
                                                               page->night_light_custom_end_spin),
+                       FALSE,
+                       FALSE,
+                       0);
+    gtk_box_pack_start(GTK_BOX(night_box), create_setting_row("Variable Refresh Rate",
+                                                              "Enable VRR on outputs and drivers that expose a compatible runtime property.",
+                                                              page->vrr_switch),
                        FALSE,
                        FALSE,
                        0);
@@ -314,6 +322,10 @@ GtkWidget *dc_display_edit_page_get_night_light_custom_start_spin(DcDisplayEditP
 
 GtkWidget *dc_display_edit_page_get_night_light_custom_end_spin(DcDisplayEditPage *page) {
     return page->night_light_custom_end_spin;
+}
+
+GtkWidget *dc_display_edit_page_get_vrr_switch(DcDisplayEditPage *page) {
+    return page->vrr_switch;
 }
 
 GtkWidget *dc_display_edit_page_get_adaptive_brightness_switch(DcDisplayEditPage *page) {

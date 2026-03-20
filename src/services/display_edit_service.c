@@ -34,6 +34,7 @@ DcDisplayEditConfig *dc_display_edit_config_new(void) {
     config->night_light_schedule = g_strdup("sunset");
     config->night_light_custom_start_hour = 21;
     config->night_light_custom_end_hour = 6;
+    config->vrr_enabled = FALSE;
     config->adaptive_brightness = FALSE;
     config->gamma = 1.0;
     config->vibrance = 18;
@@ -110,6 +111,9 @@ gboolean dc_display_edit_config_load(DcDisplayEditConfig **config, char **error_
     if (g_key_file_has_key(key_file, "display-edit", "night_light_custom_end_hour", NULL)) {
         loaded->night_light_custom_end_hour = g_key_file_get_integer(key_file, "display-edit", "night_light_custom_end_hour", NULL);
     }
+    if (g_key_file_has_key(key_file, "display-edit", "vrr_enabled", NULL)) {
+        loaded->vrr_enabled = g_key_file_get_boolean(key_file, "display-edit", "vrr_enabled", NULL);
+    }
     if (g_key_file_has_key(key_file, "display-edit", "gamma", NULL)) {
         loaded->gamma = g_key_file_get_double(key_file, "display-edit", "gamma", NULL);
     }
@@ -145,6 +149,7 @@ gboolean dc_display_edit_config_save(const DcDisplayEditConfig *config, char **e
     g_key_file_set_string(key_file, "display-edit", "night_light_schedule", config->night_light_schedule != NULL ? config->night_light_schedule : "sunset");
     g_key_file_set_integer(key_file, "display-edit", "night_light_custom_start_hour", config->night_light_custom_start_hour);
     g_key_file_set_integer(key_file, "display-edit", "night_light_custom_end_hour", config->night_light_custom_end_hour);
+    g_key_file_set_boolean(key_file, "display-edit", "vrr_enabled", config->vrr_enabled);
     g_key_file_set_boolean(key_file, "display-edit", "adaptive_brightness", config->adaptive_brightness);
     g_key_file_set_double(key_file, "display-edit", "gamma", config->gamma);
     g_key_file_set_integer(key_file, "display-edit", "vibrance", config->vibrance);

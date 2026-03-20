@@ -9,6 +9,7 @@ typedef struct {
     char *night_light_schedule;
     int night_light_custom_start_hour;
     int night_light_custom_end_hour;
+    gboolean vrr_enabled;
     gboolean adaptive_brightness;
     double gamma;
     int vibrance;
