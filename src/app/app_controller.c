@@ -1289,10 +1289,9 @@ static void on_apply_clicked(GtkButton *button, gpointer user_data) {
 static void activate(GtkApplication *gtk_app, gpointer user_data) {
     DcAppController *app = user_data;
     GtkWidget *root_box;
-    GtkWidget *main_box;
-    GtkWidget *sidebar_frame;
-    GtkWidget *sidebar_box;
-    GtkWidget *stack_sidebar;
+    GtkWidget *topbar_frame;
+    GtkWidget *topbar_box;
+    GtkWidget *stack_switcher;
     GtkWidget *stack_frame;
 
     app->preview = dc_preview_canvas_new();
@@ -1318,34 +1317,34 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     }
 
     root_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
-    main_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 16);
-    sidebar_frame = gtk_frame_new(NULL);
-    sidebar_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
-    stack_sidebar = gtk_stack_sidebar_new();
+    topbar_frame = gtk_frame_new(NULL);
+    topbar_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    stack_switcher = gtk_stack_switcher_new();
     stack_frame = gtk_frame_new(NULL);
     app->stack = gtk_stack_new();
     gtk_stack_set_transition_type(GTK_STACK(app->stack), GTK_STACK_TRANSITION_TYPE_CROSSFADE);
     gtk_stack_set_transition_duration(GTK_STACK(app->stack), 220);
-    gtk_stack_sidebar_set_stack(GTK_STACK_SIDEBAR(stack_sidebar), GTK_STACK(app->stack));
+    gtk_stack_switcher_set_stack(GTK_STACK_SWITCHER(stack_switcher), GTK_STACK(app->stack));
+    gtk_widget_set_halign(stack_switcher, GTK_ALIGN_CENTER);
+    gtk_widget_set_hexpand(stack_switcher, TRUE);
 
     add_css_class(root_box, "app-shell");
-    add_css_class(sidebar_frame, "sidebar-card");
+    add_css_class(topbar_frame, "topbar-card");
+    add_css_class(stack_switcher, "topbar-switcher");
     add_css_class(stack_frame, "content-card");
 
     gtk_container_add(GTK_CONTAINER(app->window), root_box);
-    gtk_container_add(GTK_CONTAINER(sidebar_frame), sidebar_box);
+    gtk_container_add(GTK_CONTAINER(topbar_frame), topbar_box);
     gtk_container_add(GTK_CONTAINER(stack_frame), app->stack);
 
-    gtk_frame_set_shadow_type(GTK_FRAME(sidebar_frame), GTK_SHADOW_NONE);
-    gtk_container_set_border_width(GTK_CONTAINER(sidebar_frame), 0);
+    gtk_frame_set_shadow_type(GTK_FRAME(topbar_frame), GTK_SHADOW_NONE);
+    gtk_container_set_border_width(GTK_CONTAINER(topbar_frame), 0);
     gtk_frame_set_shadow_type(GTK_FRAME(stack_frame), GTK_SHADOW_NONE);
     gtk_container_set_border_width(GTK_CONTAINER(stack_frame), 0);
 
-    gtk_box_pack_start(GTK_BOX(root_box), main_box, TRUE, TRUE, 0);
-    gtk_box_pack_start(GTK_BOX(main_box), sidebar_frame, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(main_box), stack_frame, TRUE, TRUE, 0);
-
-    gtk_box_pack_start(GTK_BOX(sidebar_box), stack_sidebar, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(root_box), topbar_frame, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(root_box), stack_frame, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(topbar_box), stack_switcher, TRUE, TRUE, 0);
 
     gtk_stack_add_titled(GTK_STACK(app->stack),
                          dc_display_page_get_widget(app->display_page),

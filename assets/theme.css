@@ -8,6 +8,7 @@
 }
 
 .sidebar-card,
+.topbar-card,
 .content-card,
 .toolbar-card,
 .preview-card,
@@ -20,6 +21,7 @@
 
 .toolbar-card,
 .sidebar-card,
+.topbar-card,
 .content-card,
 .preview-card {
   padding: 14px;
@@ -122,24 +124,27 @@ frame > border {
   color: rgba(255, 255, 255, 0.70);
 }
 
-stacksidebar.sidebar {
-  background-color: transparent;
+.topbar-card {
+  padding: 10px 14px;
 }
 
-stacksidebar.sidebar list {
+stackswitcher.topbar-switcher > button {
+  color: rgba(255, 255, 255, 0.78);
   background-color: transparent;
-}
-
-stacksidebar.sidebar row {
-  color: rgba(255, 255, 255, 0.74);
-  background-color: transparent;
+  border: none;
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: 10px 16px;
+  margin: 0 4px;
+  box-shadow: none;
 }
 
-stacksidebar.sidebar row:selected,
-stacksidebar.sidebar row:hover {
-  background-color: rgba(255, 255, 255, 0.10);
-  color: rgba(255, 255, 255, 0.96);
+stackswitcher.topbar-switcher > button:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.94);
 }
 
+stackswitcher.topbar-switcher > button:checked {
+  background-color: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
