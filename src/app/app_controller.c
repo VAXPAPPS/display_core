@@ -54,8 +54,9 @@ char *dc_app_resolve_venom_config_path(void) {
 static void activate(GtkApplication *gtk_app, gpointer user_data) {
     DcAppController *app = user_data;
     GtkWidget *root_box;
+    GtkWidget *main_content_box;
     GtkWidget *headerbar;
-    GtkWidget *stack_switcher;
+    GtkWidget *sidebar;
     GtkWidget *stack_frame;
 
     app->preview = dc_preview_canvas_new();
@@ -87,18 +88,21 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     }
 
     root_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
-    stack_switcher = gtk_stack_switcher_new();
+    main_content_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    
     stack_frame = gtk_frame_new(NULL);
     app->stack = gtk_stack_new();
     gtk_stack_set_transition_type(GTK_STACK(app->stack), GTK_STACK_TRANSITION_TYPE_CROSSFADE);
     gtk_stack_set_transition_duration(GTK_STACK(app->stack), 220);
-    gtk_stack_switcher_set_stack(GTK_STACK_SWITCHER(stack_switcher), GTK_STACK(app->stack));
-    gtk_widget_set_halign(stack_switcher, GTK_ALIGN_FILL);
-    gtk_widget_set_hexpand(stack_switcher, TRUE);
-    headerbar = dc_custom_headerbar_new(GTK_WINDOW(app->window), "Display Settings", stack_switcher);
+
+    sidebar = gtk_stack_sidebar_new();
+    gtk_stack_sidebar_set_stack(GTK_STACK_SIDEBAR(sidebar), GTK_STACK(app->stack));
+    gtk_widget_set_size_request(sidebar, 180, -1);
+    
+    headerbar = dc_custom_headerbar_new(GTK_WINDOW(app->window), "Settings", NULL);
 
     dc_app_add_css_class(root_box, "app-shell");
-    dc_app_add_css_class(stack_switcher, "topbar-switcher");
+    dc_app_add_css_class(sidebar, "dc-sidebar");
     dc_app_add_css_class(stack_frame, "content-card");
 
     gtk_container_add(GTK_CONTAINER(app->window), root_box);
@@ -107,8 +111,11 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_frame_set_shadow_type(GTK_FRAME(stack_frame), GTK_SHADOW_NONE);
     gtk_container_set_border_width(GTK_CONTAINER(stack_frame), 0);
 
+    gtk_box_pack_start(GTK_BOX(main_content_box), sidebar, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(main_content_box), stack_frame, TRUE, TRUE, 0);
+
     gtk_box_pack_start(GTK_BOX(root_box), headerbar, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(root_box), stack_frame, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(root_box), main_content_box, TRUE, TRUE, 0);
 
     gtk_stack_add_titled(GTK_STACK(app->stack),
                          dc_display_page_get_widget(app->display_page),

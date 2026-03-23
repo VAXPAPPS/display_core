@@ -48,6 +48,11 @@ static const char *CUSTOM_HEADERBAR_CSS =
     "}"
     ".dc-btn-maximize:hover {"
     "  background-color: #1db954;"
+    "}"
+    ".dc-header-title {"
+    "  color: rgba(255,255,255,0.9);"
+    "  font-size: 14px;"
+    "  font-weight: 600;"
     "}";
 
 static void install_custom_headerbar_css(GtkWidget *widget) {
@@ -141,8 +146,6 @@ GtkWidget *dc_custom_headerbar_new(GtkWindow *window,
     GtkWidget *close_button;
     GtkStyleContext *context;
 
-    (void) title_text;
-
     event_box = gtk_event_box_new();
     gtk_widget_add_events(event_box, GDK_BUTTON_PRESS_MASK);
     g_signal_connect(event_box,
@@ -161,6 +164,14 @@ GtkWidget *dc_custom_headerbar_new(GtkWindow *window,
     gtk_widget_set_halign(center_box, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(center_box, GTK_ALIGN_CENTER);
     gtk_widget_set_margin_start(center_box, 8);
+    
+    if (title_text != NULL && strlen(title_text) > 0) {
+        GtkWidget *title_label = gtk_label_new(title_text);
+        GtkStyleContext *tctx = gtk_widget_get_style_context(title_label);
+        gtk_style_context_add_class(tctx, "dc-header-title");
+        gtk_box_pack_start(GTK_BOX(center_box), title_label, FALSE, FALSE, 0);
+    }
+    
     if (center_widget != NULL) {
         gtk_box_pack_start(GTK_BOX(center_box), center_widget, FALSE, FALSE, 0);
     }
