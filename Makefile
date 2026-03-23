@@ -1,6 +1,6 @@
 CC := gcc
-CFLAGS := -Wall -Wextra -Wpedantic -std=c11 -Iinclude $(shell pkg-config --cflags gtk+-3.0 xrandr x11)
-LDLIBS := $(shell pkg-config --libs gtk+-3.0 xrandr x11) -lm
+CFLAGS := -Wall -Wextra -Wpedantic -std=c11 -Iinclude -I. $(shell pkg-config --cflags gtk+-3.0 gio-2.0 xrandr x11)
+LDLIBS := $(shell pkg-config --libs gtk+-3.0 gio-2.0 xrandr x11) -lm
 
 TARGET := display-settings
 THEME_DAEMON_TARGET := vaxp-theme-daemon

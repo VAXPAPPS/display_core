@@ -1,61 +1,13 @@
 #include "app/app_controller.h"
 
-#include "domain/display_types.h"
-#include "services/profile_service.h"
-#include "services/display_edit_service.h"
-#include "services/theme_service.h"
-#include "services/venom_config_service.h"
-#include "services/window_manager_service.h"
-#include "services/xrandr_service.h"
-#include "ui/output_row.h"
-#include "ui/custom_headerbar.h"
-#include "ui/pages/compositor_page.h"
-#include "ui/pages/display_edit_page.h"
-#include "ui/pages/display_page.h"
-#include "ui/pages/themes_page.h"
-#include "ui/pages/window_manager_page.h"
-#include "ui/preview_canvas.h"
+#include "app_controller_internal.h"
+#include "services/audio_service.h"
 
-#define DC_REVERT_TIMEOUT_SECONDS 15
-#define DC_PRIMARY_VENOM_CONFIG_PATH "/home/x/.config/venom-miasma/venom.conf"
-#define DC_FALLBACK_VENOM_CONFIG_PATH "/etc/venom/venom.conf"
-
-typedef struct {
-    DcXrandrService *service;
-    GtkApplication *gtk_app;
-    GtkWidget *window;
-    GtkWidget *stack;
-    DcDisplayPage *display_page;
-    DcThemesPage *themes_page;
-    DcDisplayEditPage *display_edit_page;
-    DcWindowManagerPage *window_manager_page;
-    DcCompositorPage *compositor_page;
-    GPtrArray *output_models;
-    GPtrArray *rows;
-    DcPreviewCanvas *preview;
-    guint compositor_autosave_timeout_id;
-    gboolean suppress_compositor_autosave;
-    guint themes_autosave_timeout_id;
-    gboolean suppress_themes_autosave;
-    guint window_manager_autosave_timeout_id;
-    gboolean suppress_window_manager_autosave;
-    guint display_edit_autosave_timeout_id;
-    gboolean suppress_display_edit_autosave;
-    guint display_edit_refresh_timeout_id;
-} DcAppController;
-
-typedef struct {
-    GtkWidget *dialog;
-    GtkWidget *label;
-    guint timeout_id;
-    gint remaining_seconds;
-} DcRevertDialogData;
-
-static void add_css_class(GtkWidget *widget, const char *class_name) {
+void dc_app_add_css_class(GtkWidget *widget, const char *class_name) {
     gtk_style_context_add_class(gtk_widget_get_style_context(widget), class_name);
 }
 
-static void install_app_css(void) {
+void dc_app_install_css(void) {
     GtkCssProvider *provider;
     GdkScreen *screen;
     char *cwd;
@@ -83,169 +35,11 @@ static void install_app_css(void) {
     g_object_unref(provider);
 }
 
-static void set_status(DcAppController *app, const char *message) {
+void dc_app_set_status(DcAppController *app, const char *message) {
     gtk_label_set_text(GTK_LABEL(dc_display_page_get_status_label(app->display_page)), message);
 }
 
-static gboolean is_hour_in_range(int hour, int start_hour, int end_hour) {
-    if (start_hour == end_hour) {
-        return TRUE;
-    }
-    if (start_hour < end_hour) {
-        return hour >= start_hour && hour < end_hour;
-    }
-    return hour >= start_hour || hour < end_hour;
-}
-
-static gboolean is_night_light_active_now(const DcDisplayEditConfig *config) {
-    GDateTime *now;
-    int hour;
-    gboolean enabled;
-
-    if (config == NULL || !config->night_light_enabled) {
-        return FALSE;
-    }
-
-    if (!config->night_light_use_schedule) {
-        return TRUE;
-    }
-
-    if (g_strcmp0(config->night_light_schedule, "always") == 0) {
-        return TRUE;
-    }
-
-    now = g_date_time_new_now_local();
-    hour = g_date_time_get_hour(now);
-
-    if (g_strcmp0(config->night_light_schedule, "custom") == 0) {
-        enabled = is_hour_in_range(hour,
-                                   config->night_light_custom_start_hour,
-                                   config->night_light_custom_end_hour);
-        g_date_time_unref(now);
-        return enabled;
-    }
-
-    enabled = is_hour_in_range(hour, 18, 7);
-    g_date_time_unref(now);
-    return enabled;
-}
-
-static void update_night_light_status(DcAppController *app, const DcDisplayEditConfig *config) {
-    GtkWidget *label;
-    char *message = NULL;
-
-    label = dc_display_edit_page_get_night_light_status_label(app->display_edit_page);
-    if (config == NULL || !config->night_light_enabled) {
-        gtk_label_set_text(GTK_LABEL(label), "Night Light status: disabled.");
-        return;
-    }
-
-    if (!config->night_light_use_schedule) {
-        gtk_label_set_text(GTK_LABEL(label), "Night Light status: active now, schedule override is off.");
-        return;
-    }
-
-    if (is_night_light_active_now(config)) {
-        gtk_label_set_text(GTK_LABEL(label), "Night Light status: active now.");
-        return;
-    }
-
-    if (g_strcmp0(config->night_light_schedule, "custom") == 0) {
-        message = g_strdup_printf("Night Light status: enabled, waiting for custom window %02d:00-%02d:00.",
-                                  config->night_light_custom_start_hour,
-                                  config->night_light_custom_end_hour);
-    } else if (g_strcmp0(config->night_light_schedule, "always") == 0) {
-        gtk_label_set_text(GTK_LABEL(label), "Night Light status: active now.");
-        return;
-    } else {
-        message = g_strdup("Night Light status: enabled, waiting for sunset window 18:00-07:00.");
-    }
-
-    gtk_label_set_text(GTK_LABEL(label), message);
-    g_free(message);
-}
-
-static void set_window_manager_rules_text(DcAppController *app, const char *text) {
-    GtkTextBuffer *buffer;
-
-    buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(dc_window_manager_page_get_rules_text_view(app->window_manager_page)));
-    gtk_text_buffer_set_text(buffer, text != NULL ? text : "", -1);
-}
-
-static void refresh_window_manager_rules(DcAppController *app) {
-    char *rules_output = NULL;
-    char *error_message = NULL;
-
-    if (!dc_window_manager_list_rules(&rules_output, &error_message)) {
-        set_window_manager_rules_text(app, "Unable to query PoisonBlade rules on this session.");
-        if (error_message != NULL) {
-            set_status(app, error_message);
-        }
-        g_free(error_message);
-        return;
-    }
-
-    if (rules_output == NULL || *rules_output == '\0') {
-        set_window_manager_rules_text(app, "No rules are currently registered.");
-    } else {
-        set_window_manager_rules_text(app, rules_output);
-    }
-
-    set_status(app, "PoisonBlade rules list refreshed.");
-    g_free(rules_output);
-}
-
-static void configure_display_edit_capabilities(DcAppController *app) {
-    DcVrrSupportInfo vrr_info;
-    char *error_message = NULL;
-    GtkWidget *vrr_switch;
-    const char *status_text;
-
-    vrr_switch = dc_display_edit_page_get_vrr_switch(app->display_edit_page);
-    if (!dc_xrandr_service_get_vrr_support_info(app->service, &vrr_info, &error_message)) {
-        gtk_widget_set_sensitive(vrr_switch, FALSE);
-        gtk_widget_set_tooltip_text(vrr_switch, "Variable Refresh Rate support could not be queried.");
-        gtk_label_set_text(GTK_LABEL(dc_display_edit_page_get_vrr_status_label(app->display_edit_page)),
-                           "VRR status: support query failed.");
-        g_free(error_message);
-        return;
-    }
-
-    if (vrr_info.any_writable) {
-        gtk_widget_set_sensitive(vrr_switch, TRUE);
-        gtk_widget_set_tooltip_text(vrr_switch, "Variable Refresh Rate can be controlled on at least one connected output.");
-        if (gtk_switch_get_active(GTK_SWITCH(vrr_switch))) {
-            status_text = "VRR status: enabled on writable supported outputs.";
-        } else {
-            status_text = "VRR status: available but currently disabled by policy.";
-        }
-        gtk_label_set_text(GTK_LABEL(dc_display_edit_page_get_vrr_status_label(app->display_edit_page)), status_text);
-        g_free(error_message);
-        return;
-    }
-
-    if (vrr_info.any_supported) {
-        char *message;
-
-        gtk_widget_set_sensitive(vrr_switch, FALSE);
-        gtk_widget_set_tooltip_text(vrr_switch, "Connected outputs expose VRR-related properties, but none are writable through the current XRandR path.");
-        message = g_strdup_printf("VRR status: supported on %u/%u outputs, but no writable control is exposed.",
-                                  vrr_info.supported_outputs,
-                                  vrr_info.connected_outputs);
-        gtk_label_set_text(GTK_LABEL(dc_display_edit_page_get_vrr_status_label(app->display_edit_page)), message);
-        g_free(message);
-        g_free(error_message);
-        return;
-    }
-
-    gtk_widget_set_sensitive(vrr_switch, FALSE);
-    gtk_widget_set_tooltip_text(vrr_switch, "Variable Refresh Rate is not exposed by the current connected outputs or driver.");
-    gtk_label_set_text(GTK_LABEL(dc_display_edit_page_get_vrr_status_label(app->display_edit_page)),
-                       "VRR status: unavailable on current outputs or driver.");
-    g_free(error_message);
-}
-
-static char *resolve_venom_config_path(void) {
+char *dc_app_resolve_venom_config_path(void) {
     if (g_file_test(DC_PRIMARY_VENOM_CONFIG_PATH, G_FILE_TEST_EXISTS)) {
         return g_strdup(DC_PRIMARY_VENOM_CONFIG_PATH);
     }
@@ -257,1242 +51,6 @@ static char *resolve_venom_config_path(void) {
     return g_strdup(DC_PRIMARY_VENOM_CONFIG_PATH);
 }
 
-static void apply_venom_config_to_ui(DcAppController *app, const DcVenomConfig *config) {
-    gtk_switch_set_active(GTK_SWITCH(dc_compositor_page_get_shadow_switch(app->compositor_page)), config->shadow);
-    gtk_range_set_value(GTK_RANGE(dc_compositor_page_get_shadow_radius_scale(app->compositor_page)), config->shadow_radius);
-    gtk_range_set_value(GTK_RANGE(dc_compositor_page_get_shadow_opacity_scale(app->compositor_page)), config->shadow_opacity * 100.0);
-    gtk_range_set_value(GTK_RANGE(dc_compositor_page_get_shadow_red_scale(app->compositor_page)), config->shadow_red);
-    gtk_range_set_value(GTK_RANGE(dc_compositor_page_get_shadow_green_scale(app->compositor_page)), config->shadow_green);
-    gtk_range_set_value(GTK_RANGE(dc_compositor_page_get_shadow_blue_scale(app->compositor_page)), config->shadow_blue);
-    gtk_switch_set_active(GTK_SWITCH(dc_compositor_page_get_fading_switch(app->compositor_page)), config->fading);
-    gtk_range_set_value(GTK_RANGE(dc_compositor_page_get_active_opacity_scale(app->compositor_page)), config->active_opacity * 100.0);
-    gtk_range_set_value(GTK_RANGE(dc_compositor_page_get_inactive_opacity_scale(app->compositor_page)), config->inactive_opacity * 100.0);
-    gtk_range_set_value(GTK_RANGE(dc_compositor_page_get_corner_radius_scale(app->compositor_page)), config->corner_radius);
-    gtk_switch_set_active(GTK_SWITCH(dc_compositor_page_get_detect_rounded_switch(app->compositor_page)), config->detect_rounded_corners);
-    gtk_combo_box_set_active_id(GTK_COMBO_BOX(dc_compositor_page_get_blur_method_combo(app->compositor_page)), config->blur_method);
-    gtk_range_set_value(GTK_RANGE(dc_compositor_page_get_blur_strength_scale(app->compositor_page)), config->blur_strength);
-    gtk_switch_set_active(GTK_SWITCH(dc_compositor_page_get_blur_background_switch(app->compositor_page)), config->blur_background);
-    gtk_switch_set_active(GTK_SWITCH(dc_compositor_page_get_blur_background_frame_switch(app->compositor_page)), config->blur_background_frame);
-    gtk_combo_box_set_active_id(GTK_COMBO_BOX(dc_compositor_page_get_backend_combo(app->compositor_page)), config->backend);
-    gtk_switch_set_active(GTK_SWITCH(dc_compositor_page_get_vsync_switch(app->compositor_page)), config->vsync);
-    gtk_switch_set_active(GTK_SWITCH(dc_compositor_page_get_use_damage_switch(app->compositor_page)), config->use_damage);
-}
-
-static void apply_display_edit_config_to_ui(DcAppController *app, const DcDisplayEditConfig *config) {
-    gtk_switch_set_active(GTK_SWITCH(dc_display_edit_page_get_night_light_switch(app->display_edit_page)), config->night_light_enabled);
-    gtk_switch_set_active(GTK_SWITCH(dc_display_edit_page_get_night_light_use_schedule_switch(app->display_edit_page)), config->night_light_use_schedule);
-    gtk_range_set_value(GTK_RANGE(dc_display_edit_page_get_night_light_temperature_scale(app->display_edit_page)), config->night_light_temperature);
-    gtk_combo_box_set_active_id(GTK_COMBO_BOX(dc_display_edit_page_get_night_light_schedule_combo(app->display_edit_page)), config->night_light_schedule);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(dc_display_edit_page_get_night_light_custom_start_spin(app->display_edit_page)), config->night_light_custom_start_hour);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(dc_display_edit_page_get_night_light_custom_end_spin(app->display_edit_page)), config->night_light_custom_end_hour);
-    gtk_switch_set_active(GTK_SWITCH(dc_display_edit_page_get_vrr_switch(app->display_edit_page)), config->vrr_enabled);
-    gtk_switch_set_active(GTK_SWITCH(dc_display_edit_page_get_adaptive_brightness_switch(app->display_edit_page)), config->adaptive_brightness);
-    gtk_range_set_value(GTK_RANGE(dc_display_edit_page_get_gamma_scale(app->display_edit_page)), config->gamma);
-    gtk_range_set_value(GTK_RANGE(dc_display_edit_page_get_vibrance_scale(app->display_edit_page)), config->vibrance);
-    update_night_light_status(app, config);
-}
-
-static void apply_window_manager_config_to_ui(DcAppController *app, const DcWindowManagerConfig *config) {
-    gtk_switch_set_active(GTK_SWITCH(dc_window_manager_page_get_floating_mode_switch(app->window_manager_page)), config->floating_mode);
-    gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_snap_threshold_scale(app->window_manager_page)), config->snap_threshold);
-    gtk_switch_set_active(GTK_SWITCH(dc_window_manager_page_get_snap_show_preview_switch(app->window_manager_page)), config->snap_show_preview);
-    gtk_combo_box_set_active_id(GTK_COMBO_BOX(dc_window_manager_page_get_layout_combo(app->window_manager_page)), config->desktop_layout);
-    gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_border_width_scale(app->window_manager_page)), config->border_width);
-    gtk_entry_set_text(GTK_ENTRY(dc_window_manager_page_get_focused_border_color_entry(app->window_manager_page)),
-                       config->focused_border_color != NULL ? config->focused_border_color : "");
-    gtk_entry_set_text(GTK_ENTRY(dc_window_manager_page_get_normal_border_color_entry(app->window_manager_page)),
-                       config->normal_border_color != NULL ? config->normal_border_color : "");
-    gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_window_gap_scale(app->window_manager_page)), config->window_gap);
-    gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_top_padding_scale(app->window_manager_page)), config->top_padding);
-    gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_bottom_padding_scale(app->window_manager_page)), config->bottom_padding);
-    gtk_switch_set_active(GTK_SWITCH(dc_window_manager_page_get_focus_opacity_switch(app->window_manager_page)), config->focus_opacity);
-    gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_inactive_opacity_scale(app->window_manager_page)), config->inactive_opacity);
-    gtk_range_set_value(GTK_RANGE(dc_window_manager_page_get_active_opacity_scale(app->window_manager_page)), config->active_opacity);
-}
-
-static void fill_combo_with_values(GtkComboBoxText *combo, GStrv values) {
-    guint i;
-
-    gtk_combo_box_text_remove_all(combo);
-    if (values == NULL) {
-        return;
-    }
-
-    for (i = 0; values[i] != NULL; i++) {
-        gtk_combo_box_text_append(combo, values[i], values[i]);
-    }
-
-    if (values[0] != NULL) {
-        gtk_combo_box_set_active(GTK_COMBO_BOX(combo), 0);
-    }
-}
-
-static void ensure_combo_has_active_id(GtkComboBoxText *combo, const char *id) {
-    if (id == NULL || *id == '\0') {
-        return;
-    }
-
-    if (!gtk_combo_box_set_active_id(GTK_COMBO_BOX(combo), id)) {
-        gtk_combo_box_text_append(combo, id, id);
-        gtk_combo_box_set_active_id(GTK_COMBO_BOX(combo), id);
-    }
-}
-
-static void populate_theme_choices(DcAppController *app) {
-    GStrv gtk_themes = NULL;
-    GStrv icon_themes = NULL;
-    GStrv cursor_themes = NULL;
-    GStrv fonts = NULL;
-    char *error_message = NULL;
-
-    if (dc_theme_service_list_gtk_themes(&gtk_themes, &error_message)) {
-        fill_combo_with_values(GTK_COMBO_BOX_TEXT(dc_themes_page_get_theme_combo(app->themes_page)), gtk_themes);
-    }
-    g_free(error_message);
-    error_message = NULL;
-
-    if (dc_theme_service_list_icon_themes(&icon_themes, &error_message)) {
-        fill_combo_with_values(GTK_COMBO_BOX_TEXT(dc_themes_page_get_icons_combo(app->themes_page)), icon_themes);
-    }
-    g_free(error_message);
-    error_message = NULL;
-
-    if (dc_theme_service_list_cursor_themes(&cursor_themes, &error_message)) {
-        fill_combo_with_values(GTK_COMBO_BOX_TEXT(dc_themes_page_get_cursor_combo(app->themes_page)), cursor_themes);
-    }
-    g_free(error_message);
-    error_message = NULL;
-
-    if (dc_theme_service_list_fonts(&fonts, &error_message)) {
-        fill_combo_with_values(GTK_COMBO_BOX_TEXT(dc_themes_page_get_font_combo(app->themes_page)), fonts);
-    }
-    g_free(error_message);
-
-    g_strfreev(gtk_themes);
-    g_strfreev(icon_themes);
-    g_strfreev(cursor_themes);
-    g_strfreev(fonts);
-}
-
-static void apply_theme_config_to_ui(DcAppController *app, const DcThemeConfig *config) {
-    ensure_combo_has_active_id(GTK_COMBO_BOX_TEXT(dc_themes_page_get_theme_combo(app->themes_page)), config->gtk_theme);
-    ensure_combo_has_active_id(GTK_COMBO_BOX_TEXT(dc_themes_page_get_icons_combo(app->themes_page)), config->icon_theme);
-    ensure_combo_has_active_id(GTK_COMBO_BOX_TEXT(dc_themes_page_get_cursor_combo(app->themes_page)), config->cursor_theme);
-    ensure_combo_has_active_id(GTK_COMBO_BOX_TEXT(dc_themes_page_get_font_combo(app->themes_page)), config->font_name);
-    ensure_combo_has_active_id(GTK_COMBO_BOX_TEXT(dc_themes_page_get_mode_combo(app->themes_page)), config->interface_mode);
-    ensure_combo_has_active_id(GTK_COMBO_BOX_TEXT(dc_themes_page_get_mono_font_combo(app->themes_page)), config->monospace_font);
-    gtk_range_set_value(GTK_RANGE(dc_themes_page_get_cursor_size_scale(app->themes_page)), config->cursor_size);
-    gtk_range_set_value(GTK_RANGE(dc_themes_page_get_text_scale(app->themes_page)), config->text_scale);
-}
-
-static DcThemeConfig *collect_theme_config_from_ui(DcAppController *app) {
-    DcThemeConfig *config;
-    const char *active_id;
-
-    config = dc_theme_config_new();
-
-    active_id = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_themes_page_get_theme_combo(app->themes_page)));
-    if (active_id != NULL) {
-        g_free(config->gtk_theme);
-        config->gtk_theme = g_strdup(active_id);
-    }
-
-    active_id = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_themes_page_get_icons_combo(app->themes_page)));
-    if (active_id != NULL) {
-        g_free(config->icon_theme);
-        config->icon_theme = g_strdup(active_id);
-    }
-
-    active_id = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_themes_page_get_cursor_combo(app->themes_page)));
-    if (active_id != NULL) {
-        g_free(config->cursor_theme);
-        config->cursor_theme = g_strdup(active_id);
-    }
-
-    active_id = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_themes_page_get_font_combo(app->themes_page)));
-    if (active_id != NULL) {
-        g_free(config->font_name);
-        config->font_name = g_strdup(active_id);
-    }
-
-    active_id = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_themes_page_get_mode_combo(app->themes_page)));
-    if (active_id != NULL) {
-        g_free(config->interface_mode);
-        config->interface_mode = g_strdup(active_id);
-    }
-
-    active_id = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_themes_page_get_mono_font_combo(app->themes_page)));
-    if (active_id != NULL) {
-        g_free(config->monospace_font);
-        config->monospace_font = g_strdup(active_id);
-    }
-
-    config->cursor_size = (int) gtk_range_get_value(GTK_RANGE(dc_themes_page_get_cursor_size_scale(app->themes_page)));
-    config->text_scale = gtk_range_get_value(GTK_RANGE(dc_themes_page_get_text_scale(app->themes_page)));
-    return config;
-}
-
-static DcVenomConfig *collect_venom_config_from_ui(DcAppController *app) {
-    DcVenomConfig *config = dc_venom_config_new();
-    const char *blur_method;
-    const char *backend;
-
-    config->shadow = gtk_switch_get_active(GTK_SWITCH(dc_compositor_page_get_shadow_switch(app->compositor_page)));
-    config->shadow_radius = (int) gtk_range_get_value(GTK_RANGE(dc_compositor_page_get_shadow_radius_scale(app->compositor_page)));
-    config->shadow_opacity = gtk_range_get_value(GTK_RANGE(dc_compositor_page_get_shadow_opacity_scale(app->compositor_page))) / 100.0;
-    config->shadow_red = gtk_range_get_value(GTK_RANGE(dc_compositor_page_get_shadow_red_scale(app->compositor_page)));
-    config->shadow_green = gtk_range_get_value(GTK_RANGE(dc_compositor_page_get_shadow_green_scale(app->compositor_page)));
-    config->shadow_blue = gtk_range_get_value(GTK_RANGE(dc_compositor_page_get_shadow_blue_scale(app->compositor_page)));
-    config->fading = gtk_switch_get_active(GTK_SWITCH(dc_compositor_page_get_fading_switch(app->compositor_page)));
-    config->active_opacity = gtk_range_get_value(GTK_RANGE(dc_compositor_page_get_active_opacity_scale(app->compositor_page))) / 100.0;
-    config->inactive_opacity = gtk_range_get_value(GTK_RANGE(dc_compositor_page_get_inactive_opacity_scale(app->compositor_page))) / 100.0;
-    config->corner_radius = (int) gtk_range_get_value(GTK_RANGE(dc_compositor_page_get_corner_radius_scale(app->compositor_page)));
-    config->detect_rounded_corners = gtk_switch_get_active(GTK_SWITCH(dc_compositor_page_get_detect_rounded_switch(app->compositor_page)));
-
-    blur_method = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_compositor_page_get_blur_method_combo(app->compositor_page)));
-    if (blur_method != NULL) {
-        g_free(config->blur_method);
-        config->blur_method = g_strdup(blur_method);
-    }
-
-    config->blur_strength = (int) gtk_range_get_value(GTK_RANGE(dc_compositor_page_get_blur_strength_scale(app->compositor_page)));
-    config->blur_background = gtk_switch_get_active(GTK_SWITCH(dc_compositor_page_get_blur_background_switch(app->compositor_page)));
-    config->blur_background_frame = gtk_switch_get_active(GTK_SWITCH(dc_compositor_page_get_blur_background_frame_switch(app->compositor_page)));
-
-    backend = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_compositor_page_get_backend_combo(app->compositor_page)));
-    if (backend != NULL) {
-        g_free(config->backend);
-        config->backend = g_strdup(backend);
-    }
-
-    config->vsync = gtk_switch_get_active(GTK_SWITCH(dc_compositor_page_get_vsync_switch(app->compositor_page)));
-    config->use_damage = gtk_switch_get_active(GTK_SWITCH(dc_compositor_page_get_use_damage_switch(app->compositor_page)));
-    return config;
-}
-
-static DcDisplayEditConfig *collect_display_edit_config_from_ui(DcAppController *app) {
-    DcDisplayEditConfig *config;
-    const char *schedule;
-
-    config = dc_display_edit_config_new();
-    config->night_light_enabled = gtk_switch_get_active(GTK_SWITCH(dc_display_edit_page_get_night_light_switch(app->display_edit_page)));
-    config->night_light_use_schedule = gtk_switch_get_active(GTK_SWITCH(dc_display_edit_page_get_night_light_use_schedule_switch(app->display_edit_page)));
-    config->night_light_temperature = (int) gtk_range_get_value(GTK_RANGE(dc_display_edit_page_get_night_light_temperature_scale(app->display_edit_page)));
-    schedule = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_display_edit_page_get_night_light_schedule_combo(app->display_edit_page)));
-    if (schedule != NULL) {
-        g_free(config->night_light_schedule);
-        config->night_light_schedule = g_strdup(schedule);
-    }
-    config->night_light_custom_start_hour = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(dc_display_edit_page_get_night_light_custom_start_spin(app->display_edit_page)));
-    config->night_light_custom_end_hour = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(dc_display_edit_page_get_night_light_custom_end_spin(app->display_edit_page)));
-    config->vrr_enabled = gtk_switch_get_active(GTK_SWITCH(dc_display_edit_page_get_vrr_switch(app->display_edit_page)));
-    config->adaptive_brightness = gtk_switch_get_active(GTK_SWITCH(dc_display_edit_page_get_adaptive_brightness_switch(app->display_edit_page)));
-    config->gamma = gtk_range_get_value(GTK_RANGE(dc_display_edit_page_get_gamma_scale(app->display_edit_page)));
-    config->vibrance = (int) gtk_range_get_value(GTK_RANGE(dc_display_edit_page_get_vibrance_scale(app->display_edit_page)));
-    return config;
-}
-
-static DcWindowManagerConfig *collect_window_manager_config_from_ui(DcAppController *app) {
-    DcWindowManagerConfig *config;
-    const char *layout;
-
-    config = dc_window_manager_config_new();
-    config->floating_mode = gtk_switch_get_active(GTK_SWITCH(dc_window_manager_page_get_floating_mode_switch(app->window_manager_page)));
-    config->snap_threshold = (int) gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_snap_threshold_scale(app->window_manager_page)));
-    config->snap_show_preview = gtk_switch_get_active(GTK_SWITCH(dc_window_manager_page_get_snap_show_preview_switch(app->window_manager_page)));
-    layout = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_window_manager_page_get_layout_combo(app->window_manager_page)));
-    if (layout != NULL) {
-        g_free(config->desktop_layout);
-        config->desktop_layout = g_strdup(layout);
-    }
-    config->border_width = (int) gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_border_width_scale(app->window_manager_page)));
-    g_free(config->focused_border_color);
-    config->focused_border_color = g_strdup(gtk_entry_get_text(GTK_ENTRY(dc_window_manager_page_get_focused_border_color_entry(app->window_manager_page))));
-    g_free(config->normal_border_color);
-    config->normal_border_color = g_strdup(gtk_entry_get_text(GTK_ENTRY(dc_window_manager_page_get_normal_border_color_entry(app->window_manager_page))));
-    config->window_gap = (int) gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_window_gap_scale(app->window_manager_page)));
-    config->top_padding = (int) gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_top_padding_scale(app->window_manager_page)));
-    config->bottom_padding = (int) gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_bottom_padding_scale(app->window_manager_page)));
-    config->focus_opacity = gtk_switch_get_active(GTK_SWITCH(dc_window_manager_page_get_focus_opacity_switch(app->window_manager_page)));
-    config->inactive_opacity = gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_inactive_opacity_scale(app->window_manager_page)));
-    config->active_opacity = gtk_range_get_value(GTK_RANGE(dc_window_manager_page_get_active_opacity_scale(app->window_manager_page)));
-    return config;
-}
-
-static void on_compositor_load_clicked(GtkButton *button, gpointer user_data) {
-    DcAppController *app = user_data;
-    DcVenomConfig *config = NULL;
-    char *error_message = NULL;
-    char *config_path;
-
-    (void) button;
-
-    config_path = resolve_venom_config_path();
-    app->suppress_compositor_autosave = TRUE;
-
-    if (dc_venom_config_load(config_path, &config, &error_message)) {
-        apply_venom_config_to_ui(app, config);
-        dc_venom_config_free(config);
-        app->suppress_compositor_autosave = FALSE;
-        g_free(config_path);
-        return;
-    }
-
-    app->suppress_compositor_autosave = FALSE;
-    g_warning("%s", error_message != NULL ? error_message : "Failed to load venom.conf.");
-    g_free(error_message);
-    g_free(config_path);
-}
-
-static void on_compositor_save_clicked(GtkButton *button, gpointer user_data) {
-    DcAppController *app = user_data;
-    DcVenomConfig *config;
-    char *error_message = NULL;
-    char *config_path;
-
-    (void) button;
-
-    config = collect_venom_config_from_ui(app);
-    config_path = resolve_venom_config_path();
-
-    if (!dc_venom_config_save(config_path, config, &error_message)) {
-        g_warning("%s", error_message != NULL ? error_message : "Failed to save venom.conf.");
-    }
-
-    g_free(error_message);
-    g_free(config_path);
-    dc_venom_config_free(config);
-}
-
-static void on_display_edit_load(DcAppController *app) {
-    DcDisplayEditConfig *config = NULL;
-    char *error_message = NULL;
-
-    app->suppress_display_edit_autosave = TRUE;
-
-    if (dc_display_edit_config_load(&config, &error_message)) {
-        apply_display_edit_config_to_ui(app, config);
-        dc_xrandr_service_apply_display_edit(app->service, config, NULL);
-        dc_display_edit_config_free(config);
-        app->suppress_display_edit_autosave = FALSE;
-        return;
-    }
-
-    app->suppress_display_edit_autosave = FALSE;
-    g_warning("%s", error_message != NULL ? error_message : "Failed to load display edit config.");
-    g_free(error_message);
-}
-
-static void on_display_edit_save(DcAppController *app) {
-    DcDisplayEditConfig *config;
-    char *error_message = NULL;
-
-    config = collect_display_edit_config_from_ui(app);
-
-    if (!dc_display_edit_config_save(config, &error_message)) {
-        g_warning("%s", error_message != NULL ? error_message : "Failed to save display edit config.");
-        g_free(error_message);
-        dc_display_edit_config_free(config);
-        return;
-    }
-
-    g_free(error_message);
-    error_message = NULL;
-    if (!dc_xrandr_service_apply_display_edit(app->service, config, &error_message)) {
-        g_warning("%s", error_message != NULL ? error_message : "Failed to apply display edit config.");
-    }
-
-    update_night_light_status(app, config);
-    g_free(error_message);
-    dc_display_edit_config_free(config);
-}
-
-static void on_window_manager_load(DcAppController *app) {
-    DcWindowManagerConfig *config = NULL;
-    char *error_message = NULL;
-
-    app->suppress_window_manager_autosave = TRUE;
-    if (dc_window_manager_config_load(&config, &error_message)) {
-        apply_window_manager_config_to_ui(app, config);
-        dc_window_manager_apply_config(config, NULL);
-        refresh_window_manager_rules(app);
-        dc_window_manager_config_free(config);
-        app->suppress_window_manager_autosave = FALSE;
-        return;
-    }
-
-    app->suppress_window_manager_autosave = FALSE;
-    g_warning("%s", error_message != NULL ? error_message : "Failed to load window manager config.");
-    g_free(error_message);
-}
-
-static void on_window_manager_save(DcAppController *app) {
-    DcWindowManagerConfig *config;
-    char *error_message = NULL;
-
-    config = collect_window_manager_config_from_ui(app);
-    if (!dc_window_manager_config_save(config, &error_message)) {
-        g_warning("%s", error_message != NULL ? error_message : "Failed to save window manager config.");
-        g_free(error_message);
-        dc_window_manager_config_free(config);
-        return;
-    }
-
-    g_free(error_message);
-    error_message = NULL;
-    if (!dc_window_manager_apply_config(config, &error_message)) {
-        g_warning("%s", error_message != NULL ? error_message : "Failed to apply PoisonBlade settings.");
-    }
-
-    g_free(error_message);
-    dc_window_manager_config_free(config);
-}
-
-static void on_themes_load(DcAppController *app) {
-    DcThemeConfig *config = NULL;
-    char *error_message = NULL;
-
-    app->suppress_themes_autosave = TRUE;
-    populate_theme_choices(app);
-
-    if (dc_theme_config_load(&config, &error_message)) {
-        apply_theme_config_to_ui(app, config);
-        dc_theme_config_free(config);
-        gtk_widget_set_sensitive(dc_themes_page_get_mono_font_combo(app->themes_page), FALSE);
-        gtk_widget_set_tooltip_text(dc_themes_page_get_mono_font_combo(app->themes_page),
-                                    "Monospace font wiring is not exposed by the current theme daemon yet.");
-        app->suppress_themes_autosave = FALSE;
-        return;
-    }
-
-    app->suppress_themes_autosave = FALSE;
-    g_warning("%s", error_message != NULL ? error_message : "Failed to load theme daemon config.");
-    g_free(error_message);
-}
-
-static void on_themes_save(DcAppController *app) {
-    DcThemeConfig *config;
-    char *error_message = NULL;
-
-    config = collect_theme_config_from_ui(app);
-    if (!dc_theme_config_apply(config, &error_message)) {
-        set_status(app, error_message != NULL ? error_message : "Failed to apply theme settings.");
-        g_free(error_message);
-        dc_theme_config_free(config);
-        return;
-    }
-
-    set_status(app, "Theme settings applied.");
-    dc_theme_config_free(config);
-}
-
-static void on_window_manager_add_desktop_clicked(GtkButton *button, gpointer user_data) {
-    DcAppController *app = user_data;
-    char *error_message = NULL;
-    const char *name;
-
-    (void) button;
-    name = gtk_entry_get_text(GTK_ENTRY(dc_window_manager_page_get_add_desktop_entry(app->window_manager_page)));
-    if (!dc_window_manager_add_desktop(name, &error_message)) {
-        set_status(app, error_message != NULL ? error_message : "Failed to create a new desktop.");
-        g_free(error_message);
-        return;
-    }
-
-    set_status(app, "PoisonBlade created a new desktop.");
-}
-
-static void on_window_manager_rename_desktop_clicked(GtkButton *button, gpointer user_data) {
-    DcAppController *app = user_data;
-    char *error_message = NULL;
-    const char *name;
-
-    (void) button;
-    name = gtk_entry_get_text(GTK_ENTRY(dc_window_manager_page_get_rename_desktop_entry(app->window_manager_page)));
-    if (!dc_window_manager_rename_desktop(name, &error_message)) {
-        set_status(app, error_message != NULL ? error_message : "Failed to rename the current desktop.");
-        g_free(error_message);
-        return;
-    }
-
-    set_status(app, "PoisonBlade renamed the current desktop.");
-}
-
-static void on_window_manager_remove_desktop_clicked(GtkButton *button, gpointer user_data) {
-    DcAppController *app = user_data;
-    char *error_message = NULL;
-
-    (void) button;
-    if (!dc_window_manager_remove_current_desktop(&error_message)) {
-        set_status(app, error_message != NULL ? error_message : "Failed to remove the current desktop.");
-        g_free(error_message);
-        return;
-    }
-
-    set_status(app, "PoisonBlade removed the current desktop.");
-}
-
-static void on_window_manager_add_rule_clicked(GtkButton *button, gpointer user_data) {
-    DcAppController *app = user_data;
-    char *error_message = NULL;
-    const char *app_name;
-    const char *desktop;
-    const char *state;
-
-    (void) button;
-    app_name = gtk_entry_get_text(GTK_ENTRY(dc_window_manager_page_get_rule_app_entry(app->window_manager_page)));
-    desktop = gtk_entry_get_text(GTK_ENTRY(dc_window_manager_page_get_rule_desktop_entry(app->window_manager_page)));
-    state = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dc_window_manager_page_get_rule_state_combo(app->window_manager_page)));
-    if (!dc_window_manager_add_rule(app_name, desktop, state, &error_message)) {
-        set_status(app, error_message != NULL ? error_message : "Failed to add the requested rule.");
-        g_free(error_message);
-        return;
-    }
-
-    refresh_window_manager_rules(app);
-    set_status(app, "PoisonBlade rule added successfully.");
-}
-
-static void on_window_manager_remove_rule_clicked(GtkButton *button, gpointer user_data) {
-    DcAppController *app = user_data;
-    char *error_message = NULL;
-    const char *app_name;
-
-    (void) button;
-    app_name = gtk_entry_get_text(GTK_ENTRY(dc_window_manager_page_get_remove_rule_entry(app->window_manager_page)));
-    if (!dc_window_manager_remove_rule(app_name, &error_message)) {
-        set_status(app, error_message != NULL ? error_message : "Failed to remove the requested rule.");
-        g_free(error_message);
-        return;
-    }
-
-    refresh_window_manager_rules(app);
-    set_status(app, "PoisonBlade rule removed successfully.");
-}
-
-static void on_window_manager_refresh_rules_clicked(GtkButton *button, gpointer user_data) {
-    (void) button;
-    refresh_window_manager_rules(user_data);
-}
-
-static gboolean refresh_display_edit_runtime(gpointer user_data) {
-    DcAppController *app = user_data;
-    DcDisplayEditConfig *config;
-    char *error_message = NULL;
-
-    if (!dc_display_edit_config_load(&config, &error_message)) {
-        g_free(error_message);
-        return G_SOURCE_CONTINUE;
-    }
-
-    if (!dc_xrandr_service_apply_display_edit(app->service, config, &error_message)) {
-        g_warning("%s", error_message != NULL ? error_message : "Failed to refresh display edit state.");
-    }
-
-    update_night_light_status(app, config);
-    g_free(error_message);
-    dc_display_edit_config_free(config);
-    return G_SOURCE_CONTINUE;
-}
-
-static gboolean flush_window_manager_autosave(gpointer user_data) {
-    DcAppController *app = user_data;
-
-    app->window_manager_autosave_timeout_id = 0;
-    on_window_manager_save(app);
-    return G_SOURCE_REMOVE;
-}
-
-static gboolean flush_compositor_autosave(gpointer user_data) {
-    DcAppController *app = user_data;
-
-    app->compositor_autosave_timeout_id = 0;
-    on_compositor_save_clicked(NULL, app);
-    return G_SOURCE_REMOVE;
-}
-
-static gboolean flush_themes_autosave(gpointer user_data) {
-    DcAppController *app = user_data;
-
-    app->themes_autosave_timeout_id = 0;
-    on_themes_save(app);
-    return G_SOURCE_REMOVE;
-}
-
-static gboolean flush_display_edit_autosave(gpointer user_data) {
-    DcAppController *app = user_data;
-
-    app->display_edit_autosave_timeout_id = 0;
-    on_display_edit_save(app);
-    return G_SOURCE_REMOVE;
-}
-
-static void queue_compositor_autosave(gpointer user_data) {
-    DcAppController *app = user_data;
-
-    if (app->suppress_compositor_autosave) {
-        return;
-    }
-
-    if (app->compositor_autosave_timeout_id != 0) {
-        g_source_remove(app->compositor_autosave_timeout_id);
-    }
-
-    app->compositor_autosave_timeout_id = g_timeout_add(200, flush_compositor_autosave, app);
-}
-
-static void queue_themes_autosave(gpointer user_data) {
-    DcAppController *app = user_data;
-
-    if (app->suppress_themes_autosave) {
-        return;
-    }
-
-    if (app->themes_autosave_timeout_id != 0) {
-        g_source_remove(app->themes_autosave_timeout_id);
-    }
-
-    app->themes_autosave_timeout_id = g_timeout_add(200, flush_themes_autosave, app);
-}
-
-static void queue_display_edit_autosave(gpointer user_data) {
-    DcAppController *app = user_data;
-
-    if (app->suppress_display_edit_autosave) {
-        return;
-    }
-
-    if (app->display_edit_autosave_timeout_id != 0) {
-        g_source_remove(app->display_edit_autosave_timeout_id);
-    }
-
-    app->display_edit_autosave_timeout_id = g_timeout_add(200, flush_display_edit_autosave, app);
-}
-
-static void queue_window_manager_autosave(gpointer user_data) {
-    DcAppController *app = user_data;
-
-    if (app->suppress_window_manager_autosave) {
-        return;
-    }
-
-    if (app->window_manager_autosave_timeout_id != 0) {
-        g_source_remove(app->window_manager_autosave_timeout_id);
-    }
-
-    app->window_manager_autosave_timeout_id = g_timeout_add(250, flush_window_manager_autosave, app);
-}
-
-static void on_compositor_widget_changed(GtkWidget *widget, gpointer user_data) {
-    (void) widget;
-    queue_compositor_autosave(user_data);
-}
-
-static void on_themes_widget_changed(GtkWidget *widget, gpointer user_data) {
-    (void) widget;
-    queue_themes_autosave(user_data);
-}
-
-static void on_compositor_switch_active_changed(GObject *object, GParamSpec *pspec, gpointer user_data) {
-    (void) object;
-    (void) pspec;
-    queue_compositor_autosave(user_data);
-}
-
-static void on_display_edit_widget_changed(GtkWidget *widget, gpointer user_data) {
-    (void) widget;
-    queue_display_edit_autosave(user_data);
-}
-
-static void on_display_edit_switch_active_changed(GObject *object, GParamSpec *pspec, gpointer user_data) {
-    (void) object;
-    (void) pspec;
-    queue_display_edit_autosave(user_data);
-}
-
-static void on_window_manager_widget_changed(GtkWidget *widget, gpointer user_data) {
-    (void) widget;
-    queue_window_manager_autosave(user_data);
-}
-
-static void on_window_manager_switch_active_changed(GObject *object, GParamSpec *pspec, gpointer user_data) {
-    (void) object;
-    (void) pspec;
-    queue_window_manager_autosave(user_data);
-}
-
-static void connect_compositor_autosave_signals(DcAppController *app) {
-    g_signal_connect(dc_compositor_page_get_shadow_switch(app->compositor_page), "notify::active", G_CALLBACK(on_compositor_switch_active_changed), app);
-    g_signal_connect(dc_compositor_page_get_shadow_radius_scale(app->compositor_page), "value-changed", G_CALLBACK(on_compositor_widget_changed), app);
-    g_signal_connect(dc_compositor_page_get_shadow_opacity_scale(app->compositor_page), "value-changed", G_CALLBACK(on_compositor_widget_changed), app);
-    g_signal_connect(dc_compositor_page_get_shadow_red_scale(app->compositor_page), "value-changed", G_CALLBACK(on_compositor_widget_changed), app);
-    g_signal_connect(dc_compositor_page_get_shadow_green_scale(app->compositor_page), "value-changed", G_CALLBACK(on_compositor_widget_changed), app);
-    g_signal_connect(dc_compositor_page_get_shadow_blue_scale(app->compositor_page), "value-changed", G_CALLBACK(on_compositor_widget_changed), app);
-    g_signal_connect(dc_compositor_page_get_fading_switch(app->compositor_page), "notify::active", G_CALLBACK(on_compositor_switch_active_changed), app);
-    g_signal_connect(dc_compositor_page_get_active_opacity_scale(app->compositor_page), "value-changed", G_CALLBACK(on_compositor_widget_changed), app);
-    g_signal_connect(dc_compositor_page_get_inactive_opacity_scale(app->compositor_page), "value-changed", G_CALLBACK(on_compositor_widget_changed), app);
-    g_signal_connect(dc_compositor_page_get_corner_radius_scale(app->compositor_page), "value-changed", G_CALLBACK(on_compositor_widget_changed), app);
-    g_signal_connect(dc_compositor_page_get_detect_rounded_switch(app->compositor_page), "notify::active", G_CALLBACK(on_compositor_switch_active_changed), app);
-    g_signal_connect(dc_compositor_page_get_blur_method_combo(app->compositor_page), "changed", G_CALLBACK(on_compositor_widget_changed), app);
-    g_signal_connect(dc_compositor_page_get_blur_strength_scale(app->compositor_page), "value-changed", G_CALLBACK(on_compositor_widget_changed), app);
-    g_signal_connect(dc_compositor_page_get_blur_background_switch(app->compositor_page), "notify::active", G_CALLBACK(on_compositor_switch_active_changed), app);
-    g_signal_connect(dc_compositor_page_get_blur_background_frame_switch(app->compositor_page), "notify::active", G_CALLBACK(on_compositor_switch_active_changed), app);
-    g_signal_connect(dc_compositor_page_get_backend_combo(app->compositor_page), "changed", G_CALLBACK(on_compositor_widget_changed), app);
-    g_signal_connect(dc_compositor_page_get_vsync_switch(app->compositor_page), "notify::active", G_CALLBACK(on_compositor_switch_active_changed), app);
-    g_signal_connect(dc_compositor_page_get_use_damage_switch(app->compositor_page), "notify::active", G_CALLBACK(on_compositor_switch_active_changed), app);
-}
-
-static void connect_themes_autosave_signals(DcAppController *app) {
-    g_signal_connect(dc_themes_page_get_mode_combo(app->themes_page), "changed", G_CALLBACK(on_themes_widget_changed), app);
-    g_signal_connect(dc_themes_page_get_theme_combo(app->themes_page), "changed", G_CALLBACK(on_themes_widget_changed), app);
-    g_signal_connect(dc_themes_page_get_icons_combo(app->themes_page), "changed", G_CALLBACK(on_themes_widget_changed), app);
-    g_signal_connect(dc_themes_page_get_cursor_combo(app->themes_page), "changed", G_CALLBACK(on_themes_widget_changed), app);
-    g_signal_connect(dc_themes_page_get_font_combo(app->themes_page), "changed", G_CALLBACK(on_themes_widget_changed), app);
-    g_signal_connect(dc_themes_page_get_cursor_size_scale(app->themes_page), "value-changed", G_CALLBACK(on_themes_widget_changed), app);
-    g_signal_connect(dc_themes_page_get_text_scale(app->themes_page), "value-changed", G_CALLBACK(on_themes_widget_changed), app);
-}
-
-static void connect_display_edit_autosave_signals(DcAppController *app) {
-    g_signal_connect(dc_display_edit_page_get_night_light_switch(app->display_edit_page), "notify::active", G_CALLBACK(on_display_edit_switch_active_changed), app);
-    g_signal_connect(dc_display_edit_page_get_night_light_use_schedule_switch(app->display_edit_page), "notify::active", G_CALLBACK(on_display_edit_switch_active_changed), app);
-    g_signal_connect(dc_display_edit_page_get_night_light_temperature_scale(app->display_edit_page), "value-changed", G_CALLBACK(on_display_edit_widget_changed), app);
-    g_signal_connect(dc_display_edit_page_get_night_light_schedule_combo(app->display_edit_page), "changed", G_CALLBACK(on_display_edit_widget_changed), app);
-    g_signal_connect(dc_display_edit_page_get_night_light_custom_start_spin(app->display_edit_page), "value-changed", G_CALLBACK(on_display_edit_widget_changed), app);
-    g_signal_connect(dc_display_edit_page_get_night_light_custom_end_spin(app->display_edit_page), "value-changed", G_CALLBACK(on_display_edit_widget_changed), app);
-    g_signal_connect(dc_display_edit_page_get_vrr_switch(app->display_edit_page), "notify::active", G_CALLBACK(on_display_edit_switch_active_changed), app);
-    g_signal_connect(dc_display_edit_page_get_adaptive_brightness_switch(app->display_edit_page), "notify::active", G_CALLBACK(on_display_edit_switch_active_changed), app);
-    g_signal_connect(dc_display_edit_page_get_gamma_scale(app->display_edit_page), "value-changed", G_CALLBACK(on_display_edit_widget_changed), app);
-    g_signal_connect(dc_display_edit_page_get_vibrance_scale(app->display_edit_page), "value-changed", G_CALLBACK(on_display_edit_widget_changed), app);
-}
-
-static void connect_window_manager_autosave_signals(DcAppController *app) {
-    g_signal_connect(dc_window_manager_page_get_floating_mode_switch(app->window_manager_page), "notify::active", G_CALLBACK(on_window_manager_switch_active_changed), app);
-    g_signal_connect(dc_window_manager_page_get_snap_threshold_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
-    g_signal_connect(dc_window_manager_page_get_snap_show_preview_switch(app->window_manager_page), "notify::active", G_CALLBACK(on_window_manager_switch_active_changed), app);
-    g_signal_connect(dc_window_manager_page_get_layout_combo(app->window_manager_page), "changed", G_CALLBACK(on_window_manager_widget_changed), app);
-    g_signal_connect(dc_window_manager_page_get_border_width_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
-    g_signal_connect(dc_window_manager_page_get_focused_border_color_entry(app->window_manager_page), "changed", G_CALLBACK(on_window_manager_widget_changed), app);
-    g_signal_connect(dc_window_manager_page_get_normal_border_color_entry(app->window_manager_page), "changed", G_CALLBACK(on_window_manager_widget_changed), app);
-    g_signal_connect(dc_window_manager_page_get_window_gap_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
-    g_signal_connect(dc_window_manager_page_get_top_padding_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
-    g_signal_connect(dc_window_manager_page_get_bottom_padding_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
-    g_signal_connect(dc_window_manager_page_get_focus_opacity_switch(app->window_manager_page), "notify::active", G_CALLBACK(on_window_manager_switch_active_changed), app);
-    g_signal_connect(dc_window_manager_page_get_inactive_opacity_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
-    g_signal_connect(dc_window_manager_page_get_active_opacity_scale(app->window_manager_page), "value-changed", G_CALLBACK(on_window_manager_widget_changed), app);
-    g_signal_connect(dc_window_manager_page_get_add_desktop_button(app->window_manager_page), "clicked", G_CALLBACK(on_window_manager_add_desktop_clicked), app);
-    g_signal_connect(dc_window_manager_page_get_rename_desktop_button(app->window_manager_page), "clicked", G_CALLBACK(on_window_manager_rename_desktop_clicked), app);
-    g_signal_connect(dc_window_manager_page_get_remove_desktop_button(app->window_manager_page), "clicked", G_CALLBACK(on_window_manager_remove_desktop_clicked), app);
-    g_signal_connect(dc_window_manager_page_get_add_rule_button(app->window_manager_page), "clicked", G_CALLBACK(on_window_manager_add_rule_clicked), app);
-    g_signal_connect(dc_window_manager_page_get_remove_rule_button(app->window_manager_page), "clicked", G_CALLBACK(on_window_manager_remove_rule_clicked), app);
-    g_signal_connect(dc_window_manager_page_get_refresh_rules_button(app->window_manager_page), "clicked", G_CALLBACK(on_window_manager_refresh_rules_clicked), app);
-}
-
-
-static gboolean is_internal_output_name(const char *name) {
-    return g_str_has_prefix(name, "eDP") ||
-           g_str_has_prefix(name, "LVDS") ||
-           g_str_has_prefix(name, "DSI");
-}
-
-static void refresh_profile_list(DcAppController *app) {
-    GStrv profile_names = NULL;
-    char *error_message = NULL;
-    guint i;
-
-    gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(dc_display_page_get_profile_combo(app->display_page)));
-
-    if (!dc_profile_service_list(&profile_names, &error_message)) {
-        set_status(app, error_message != NULL ? error_message : "Failed to load profile list.");
-        g_free(error_message);
-        return;
-    }
-
-    for (i = 0; profile_names[i] != NULL; i++) {
-            gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(dc_display_page_get_profile_combo(app->display_page)), profile_names[i]);
-    }
-
-    if (profile_names[0] != NULL) {
-        gtk_combo_box_set_active(GTK_COMBO_BOX(dc_display_page_get_profile_combo(app->display_page)), 0);
-    }
-
-    g_strfreev(profile_names);
-    g_free(error_message);
-}
-
-static GPtrArray *collect_current_configs(DcAppController *app) {
-    GPtrArray *configs = g_ptr_array_new_with_free_func((GDestroyNotify) dc_display_config_free);
-    guint i;
-
-    for (i = 0; i < app->rows->len; i++) {
-        DcOutputRow *row = g_ptr_array_index(app->rows, i);
-        DcDisplayConfig *config = dc_display_config_new();
-
-        config->output_id = dc_output_row_get_output(row)->output_id;
-        config->output_name = g_strdup(dc_output_row_get_output(row)->name);
-        config->enabled = dc_output_row_is_enabled(row);
-        config->primary = dc_output_row_is_primary(row);
-        config->mode = dc_output_row_get_selected_mode(row);
-        config->rotation = dc_output_row_get_selected_rotation(row);
-        config->x = dc_output_row_get_x(row);
-        config->y = dc_output_row_get_y(row);
-        g_ptr_array_add(configs, config);
-    }
-
-    return configs;
-}
-
-static DcOutputRow *find_row_by_name(DcAppController *app, const char *output_name) {
-    guint i;
-
-    for (i = 0; i < app->rows->len; i++) {
-        DcOutputRow *row = g_ptr_array_index(app->rows, i);
-        if (g_strcmp0(dc_output_row_get_output(row)->name, output_name) == 0) {
-            return row;
-        }
-    }
-
-    return NULL;
-}
-
-static void apply_configs_to_rows(DcAppController *app, GPtrArray *configs) {
-    guint i;
-
-    for (i = 0; i < app->rows->len; i++) {
-        dc_output_row_set_primary(g_ptr_array_index(app->rows, i), FALSE);
-    }
-
-    for (i = 0; i < configs->len; i++) {
-        DcDisplayConfig *config = g_ptr_array_index(configs, i);
-        DcOutputRow *row = find_row_by_name(app, config->output_name);
-
-        if (row == NULL) {
-            continue;
-        }
-
-        dc_output_row_set_enabled(row, config->enabled);
-        dc_output_row_set_mode(row, config->mode);
-        dc_output_row_set_rotation(row, config->rotation);
-        dc_output_row_set_position(row, config->x, config->y);
-        dc_output_row_set_primary(row, config->primary);
-    }
-
-    dc_preview_canvas_queue_draw(app->preview);
-}
-
-static void free_row_list(GPtrArray **rows) {
-    if (*rows == NULL) {
-        return;
-    }
-
-    g_ptr_array_free(*rows, TRUE);
-    *rows = NULL;
-}
-
-static void free_output_models(GPtrArray **outputs) {
-    if (*outputs == NULL) {
-        return;
-    }
-
-    g_ptr_array_free(*outputs, TRUE);
-    *outputs = NULL;
-}
-
-static void on_row_changed(gpointer user_data) {
-    DcAppController *app = user_data;
-
-    dc_preview_canvas_queue_draw(app->preview);
-}
-
-static void on_primary_selected(DcOutputRow *selected_row, gpointer user_data) {
-    DcAppController *app = user_data;
-    guint i;
-
-    for (i = 0; i < app->rows->len; i++) {
-        DcOutputRow *row = g_ptr_array_index(app->rows, i);
-        if (row != selected_row) {
-            dc_output_row_set_primary(row, FALSE);
-        }
-    }
-
-    dc_preview_canvas_queue_draw(app->preview);
-}
-
-static void clear_rows(DcAppController *app) {
-    guint i;
-
-    if (app->rows == NULL) {
-        return;
-    }
-
-    for (i = 0; i < app->rows->len; i++) {
-        DcOutputRow *row = g_ptr_array_index(app->rows, i);
-        GtkWidget *widget = dc_output_row_get_widget(row);
-
-        if (widget != NULL) {
-            gtk_widget_destroy(widget);
-        }
-    }
-
-    free_row_list(&app->rows);
-    free_output_models(&app->output_models);
-    dc_preview_canvas_set_rows(app->preview, NULL);
-}
-
-static void reload_outputs(DcAppController *app) {
-    GPtrArray *loaded_outputs = NULL;
-    char *error_message = NULL;
-    guint i;
-
-    clear_rows(app);
-    set_status(app, "Refreshing outputs...");
-
-    if (!dc_xrandr_service_load_outputs(app->service, &loaded_outputs, &error_message)) {
-        set_status(app, error_message != NULL ? error_message : "Failed to load outputs.");
-        g_free(error_message);
-        return;
-    }
-
-    app->output_models = loaded_outputs;
-    app->rows = g_ptr_array_new_with_free_func((GDestroyNotify) dc_output_row_free);
-
-    for (i = 0; i < app->output_models->len; i++) {
-        DcDisplayOutput *output = g_ptr_array_index(app->output_models, i);
-        DcOutputRow *row = dc_output_row_new(output, on_row_changed, on_primary_selected, app);
-
-        g_ptr_array_add(app->rows, row);
-        gtk_box_pack_start(GTK_BOX(dc_display_page_get_content_box(app->display_page)), dc_output_row_get_widget(row), FALSE, FALSE, 0);
-    }
-
-    dc_preview_canvas_set_rows(app->preview, app->rows);
-    gtk_widget_show_all(app->window);
-
-    if (app->rows->len == 0) {
-        set_status(app, "No connected outputs were found.");
-    } else {
-        set_status(app, "Outputs loaded. Drag displays in the preview to reposition them.");
-    }
-
-    refresh_profile_list(app);
-    g_free(error_message);
-}
-
-static void on_refresh_clicked(GtkButton *button, gpointer user_data) {
-    DcAppController *app = user_data;
-
-    (void) button;
-    reload_outputs(app);
-}
-
-static void apply_extend_mode(DcAppController *app) {
-    guint i;
-    int next_x = 0;
-    gboolean first_enabled = TRUE;
-
-    for (i = 0; i < app->rows->len; i++) {
-        DcOutputRow *row = g_ptr_array_index(app->rows, i);
-        int x;
-        int y;
-        int width;
-        int height;
-
-        dc_output_row_set_enabled(row, TRUE);
-        dc_output_row_set_primary(row, FALSE);
-        dc_output_row_set_position(row, next_x, 0);
-        dc_output_row_set_rotation(row, RR_Rotate_0);
-
-        if (first_enabled) {
-            dc_output_row_set_primary(row, TRUE);
-            first_enabled = FALSE;
-        }
-
-        if (dc_output_row_get_geometry(row, &x, &y, &width, &height)) {
-            next_x += width;
-        }
-    }
-
-    dc_preview_canvas_queue_draw(app->preview);
-    set_status(app, "Extend mode prepared. Review and press Apply.");
-}
-
-static void apply_mirror_mode(DcAppController *app) {
-    RRMode common_mode = None;
-    guint i;
-
-    for (i = 0; i < app->rows->len; i++) {
-        DcOutputRow *row = g_ptr_array_index(app->rows, i);
-        RRMode mode = dc_output_row_get_selected_mode(row);
-
-        if (mode != None) {
-            common_mode = mode;
-            break;
-        }
-    }
-
-    for (i = 0; i < app->rows->len; i++) {
-        DcOutputRow *row = g_ptr_array_index(app->rows, i);
-
-        dc_output_row_set_enabled(row, TRUE);
-        dc_output_row_set_primary(row, i == 0);
-        dc_output_row_set_position(row, 0, 0);
-        dc_output_row_set_rotation(row, RR_Rotate_0);
-        if (common_mode != None) {
-            dc_output_row_set_mode(row, common_mode);
-        }
-    }
-
-    dc_preview_canvas_queue_draw(app->preview);
-    set_status(app, "Mirror mode prepared. Review and press Apply.");
-}
-
-static void apply_internal_only_mode(DcAppController *app) {
-    guint i;
-    DcOutputRow *fallback_row = app->rows->len > 0 ? g_ptr_array_index(app->rows, 0) : NULL;
-
-    for (i = 0; i < app->rows->len; i++) {
-        DcOutputRow *row = g_ptr_array_index(app->rows, i);
-        gboolean enabled = is_internal_output_name(dc_output_row_get_output(row)->name);
-
-        dc_output_row_set_enabled(row, enabled);
-        dc_output_row_set_primary(row, FALSE);
-        if (enabled) {
-            dc_output_row_set_position(row, 0, 0);
-            dc_output_row_set_primary(row, TRUE);
-        }
-    }
-
-    if (fallback_row != NULL) {
-        gboolean any_enabled = FALSE;
-
-        for (i = 0; i < app->rows->len; i++) {
-            if (dc_output_row_is_enabled(g_ptr_array_index(app->rows, i))) {
-                any_enabled = TRUE;
-                break;
-            }
-        }
-
-        if (!any_enabled) {
-            dc_output_row_set_enabled(fallback_row, TRUE);
-            dc_output_row_set_position(fallback_row, 0, 0);
-            dc_output_row_set_primary(fallback_row, TRUE);
-        }
-    }
-
-    dc_preview_canvas_queue_draw(app->preview);
-    set_status(app, "Internal-only mode prepared. Review and press Apply.");
-}
-
-static void apply_external_only_mode(DcAppController *app) {
-    guint i;
-    DcOutputRow *first_external = NULL;
-
-    for (i = 0; i < app->rows->len; i++) {
-        DcOutputRow *row = g_ptr_array_index(app->rows, i);
-        gboolean enabled = !is_internal_output_name(dc_output_row_get_output(row)->name);
-
-        if (enabled && first_external == NULL) {
-            first_external = row;
-        }
-
-        dc_output_row_set_enabled(row, enabled);
-        dc_output_row_set_primary(row, FALSE);
-        if (enabled) {
-            dc_output_row_set_position(row, 0, 0);
-        }
-    }
-
-    if (first_external == NULL && app->rows->len > 0) {
-        first_external = g_ptr_array_index(app->rows, 0);
-        dc_output_row_set_enabled(first_external, TRUE);
-        dc_output_row_set_position(first_external, 0, 0);
-    }
-
-    if (first_external != NULL) {
-        dc_output_row_set_primary(first_external, TRUE);
-    }
-
-    dc_preview_canvas_queue_draw(app->preview);
-    set_status(app, "External-only mode prepared. Review and press Apply.");
-}
-
-static void on_extend_clicked(GtkButton *button, gpointer user_data) {
-    (void) button;
-    apply_extend_mode(user_data);
-}
-
-static void on_mirror_clicked(GtkButton *button, gpointer user_data) {
-    (void) button;
-    apply_mirror_mode(user_data);
-}
-
-static void on_internal_clicked(GtkButton *button, gpointer user_data) {
-    (void) button;
-    apply_internal_only_mode(user_data);
-}
-
-static void on_external_clicked(GtkButton *button, gpointer user_data) {
-    (void) button;
-    apply_external_only_mode(user_data);
-}
-
-static void on_save_profile_clicked(GtkButton *button, gpointer user_data) {
-    DcAppController *app = user_data;
-    const char *profile_name = gtk_entry_get_text(GTK_ENTRY(dc_display_page_get_profile_entry(app->display_page)));
-    GPtrArray *configs;
-    char *error_message = NULL;
-
-    (void) button;
-
-    configs = collect_current_configs(app);
-    if (dc_profile_service_save(profile_name, configs, &error_message)) {
-        set_status(app, "Profile saved successfully.");
-        refresh_profile_list(app);
-    } else {
-        set_status(app, error_message != NULL ? error_message : "Failed to save profile.");
-    }
-
-    g_free(error_message);
-    g_ptr_array_free(configs, TRUE);
-}
-
-static void on_load_profile_clicked(GtkButton *button, gpointer user_data) {
-    DcAppController *app = user_data;
-    char *profile_name = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(dc_display_page_get_profile_combo(app->display_page)));
-    GPtrArray *configs = NULL;
-    char *error_message = NULL;
-
-    (void) button;
-
-    if (profile_name == NULL) {
-        set_status(app, "Choose a saved profile first.");
-        return;
-    }
-
-    if (dc_profile_service_load(profile_name, &configs, &error_message)) {
-        apply_configs_to_rows(app, configs);
-        set_status(app, "Profile loaded into the form. Review and press Apply.");
-        g_ptr_array_free(configs, TRUE);
-    } else {
-        set_status(app, error_message != NULL ? error_message : "Failed to load profile.");
-    }
-
-    g_free(profile_name);
-    g_free(error_message);
-}
-
-static gboolean on_revert_timeout(gpointer user_data) {
-    DcRevertDialogData *data = user_data;
-    char buffer[160];
-
-    data->remaining_seconds--;
-    g_snprintf(buffer,
-               sizeof(buffer),
-               "Keep these display settings? They will revert automatically in %d seconds.",
-               data->remaining_seconds);
-    gtk_label_set_text(GTK_LABEL(data->label), buffer);
-
-    if (data->remaining_seconds <= 0) {
-        gtk_dialog_response(GTK_DIALOG(data->dialog), GTK_RESPONSE_CANCEL);
-        return G_SOURCE_REMOVE;
-    }
-
-    return G_SOURCE_CONTINUE;
-}
-
-static gboolean confirm_or_revert(DcAppController *app, GPtrArray *previous_configs) {
-    GtkWidget *dialog;
-    GtkWidget *content_area;
-    GtkWidget *label;
-    DcRevertDialogData data;
-    gint response;
-    char *error_message = NULL;
-
-    dialog = gtk_dialog_new_with_buttons("Confirm Display Settings",
-                                         GTK_WINDOW(app->window),
-                                         GTK_DIALOG_MODAL,
-                                         "Keep",
-                                         GTK_RESPONSE_OK,
-                                         "Revert",
-                                         GTK_RESPONSE_CANCEL,
-                                         NULL);
-    content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
-    label = gtk_label_new(NULL);
-
-    gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
-    gtk_container_add(GTK_CONTAINER(content_area), label);
-
-    data.dialog = dialog;
-    data.label = label;
-    data.remaining_seconds = DC_REVERT_TIMEOUT_SECONDS;
-    on_revert_timeout(&data);
-    data.timeout_id = g_timeout_add_seconds(1, on_revert_timeout, &data);
-
-    gtk_widget_show_all(dialog);
-    response = gtk_dialog_run(GTK_DIALOG(dialog));
-
-    if (data.timeout_id != 0) {
-        g_source_remove(data.timeout_id);
-    }
-
-    gtk_widget_destroy(dialog);
-
-    if (response == GTK_RESPONSE_OK) {
-        set_status(app, "Display settings applied successfully.");
-        return TRUE;
-    }
-
-    if (!dc_xrandr_service_apply_configs(app->service, previous_configs, &error_message)) {
-        set_status(app, error_message != NULL ? error_message : "Failed to revert display settings.");
-        g_free(error_message);
-        return FALSE;
-    }
-
-    reload_outputs(app);
-    set_status(app, "Display settings were reverted.");
-    g_free(error_message);
-    return FALSE;
-}
-
-static void on_apply_clicked(GtkButton *button, gpointer user_data) {
-    DcAppController *app = user_data;
-    GPtrArray *configs;
-    GPtrArray *previous_configs;
-    char *error_message = NULL;
-    guint i;
-    gboolean success;
-
-    (void) button;
-
-    previous_configs = g_ptr_array_new_with_free_func((GDestroyNotify) dc_display_config_free);
-    for (i = 0; i < app->output_models->len; i++) {
-        DcDisplayOutput *output = g_ptr_array_index(app->output_models, i);
-        DcDisplayConfig *config = dc_display_config_new();
-
-        config->output_id = output->output_id;
-        config->output_name = g_strdup(output->name);
-        config->enabled = output->enabled;
-        config->primary = output->primary;
-        config->mode = output->current_mode;
-        config->rotation = output->current_rotation;
-        config->x = output->x;
-        config->y = output->y;
-        g_ptr_array_add(previous_configs, config);
-    }
-
-    configs = collect_current_configs(app);
-
-    success = dc_xrandr_service_apply_configs(app->service, configs, &error_message);
-    if (success) {
-        reload_outputs(app);
-        confirm_or_revert(app, previous_configs);
-    } else {
-        set_status(app, error_message != NULL ? error_message : "Failed to apply display settings.");
-    }
-
-    g_free(error_message);
-    g_ptr_array_free(previous_configs, TRUE);
-    g_ptr_array_free(configs, TRUE);
-}
-
 static void activate(GtkApplication *gtk_app, gpointer user_data) {
     DcAppController *app = user_data;
     GtkWidget *root_box;
@@ -1502,17 +60,21 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
 
     app->preview = dc_preview_canvas_new();
     app->display_page = dc_display_page_new(dc_preview_canvas_get_widget(app->preview));
+    app->audio_page = dc_audio_page_new();
     app->themes_page = dc_themes_page_new();
     app->display_edit_page = dc_display_edit_page_new();
     app->window_manager_page = dc_window_manager_page_new();
     app->compositor_page = dc_compositor_page_new();
+    app->power_page = dc_power_page_new();
+    app->keyboard_page = dc_keyboard_page_new();
+    app->mouse_page = dc_mouse_page_new();
     app->window = gtk_application_window_new(gtk_app);
     gtk_window_set_title(GTK_WINDOW(app->window), "Display Settings");
     gtk_window_set_default_size(GTK_WINDOW(app->window), 980, 760);
     gtk_window_set_decorated(GTK_WINDOW(app->window), FALSE);
     gtk_container_set_border_width(GTK_CONTAINER(app->window), 12);
     gtk_widget_set_name(app->window, "display-core-window");
-    add_css_class(app->window, "app-window");
+    dc_app_add_css_class(app->window, "app-window");
     gtk_widget_set_app_paintable(app->window, TRUE);
 
     {
@@ -1535,9 +97,9 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_widget_set_hexpand(stack_switcher, TRUE);
     headerbar = dc_custom_headerbar_new(GTK_WINDOW(app->window), "Display Settings", stack_switcher);
 
-    add_css_class(root_box, "app-shell");
-    add_css_class(stack_switcher, "topbar-switcher");
-    add_css_class(stack_frame, "content-card");
+    dc_app_add_css_class(root_box, "app-shell");
+    dc_app_add_css_class(stack_switcher, "topbar-switcher");
+    dc_app_add_css_class(stack_frame, "content-card");
 
     gtk_container_add(GTK_CONTAINER(app->window), root_box);
     gtk_container_add(GTK_CONTAINER(stack_frame), app->stack);
@@ -1552,6 +114,10 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
                          dc_display_page_get_widget(app->display_page),
                          "display",
                          "Display");
+    gtk_stack_add_titled(GTK_STACK(app->stack),
+                         dc_audio_page_get_widget(app->audio_page),
+                         "audio",
+                         "Audio");
     gtk_stack_add_titled(GTK_STACK(app->stack),
                          dc_themes_page_get_widget(app->themes_page),
                          "themes",
@@ -1568,27 +134,40 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
                          dc_compositor_page_get_widget(app->compositor_page),
                          "compositor",
                          "Compositor");
+    gtk_stack_add_titled(GTK_STACK(app->stack),
+                         dc_power_page_get_widget(app->power_page),
+                         "power",
+                         "Power");
+    gtk_stack_add_titled(GTK_STACK(app->stack),
+                         dc_keyboard_page_get_widget(app->keyboard_page),
+                         "keyboard",
+                         "Keyboard");
+    gtk_stack_add_titled(GTK_STACK(app->stack),
+                         dc_mouse_page_get_widget(app->mouse_page),
+                         "mouse",
+                         "Mouse & Touchpad");
 
-    g_signal_connect(dc_display_page_get_refresh_button(app->display_page), "clicked", G_CALLBACK(on_refresh_clicked), app);
-    g_signal_connect(dc_display_page_get_apply_button(app->display_page), "clicked", G_CALLBACK(on_apply_clicked), app);
-    g_signal_connect(dc_display_page_get_extend_button(app->display_page), "clicked", G_CALLBACK(on_extend_clicked), app);
-    g_signal_connect(dc_display_page_get_mirror_button(app->display_page), "clicked", G_CALLBACK(on_mirror_clicked), app);
-    g_signal_connect(dc_display_page_get_internal_button(app->display_page), "clicked", G_CALLBACK(on_internal_clicked), app);
-    g_signal_connect(dc_display_page_get_external_button(app->display_page), "clicked", G_CALLBACK(on_external_clicked), app);
-    g_signal_connect(dc_display_page_get_save_profile_button(app->display_page), "clicked", G_CALLBACK(on_save_profile_clicked), app);
-    g_signal_connect(dc_display_page_get_load_profile_button(app->display_page), "clicked", G_CALLBACK(on_load_profile_clicked), app);
+    dc_app_connect_display_page_signals(app);
     gtk_widget_show_all(app->window);
-    reload_outputs(app);
-    on_display_edit_load(app);
-    on_themes_load(app);
-    on_window_manager_load(app);
-    configure_display_edit_capabilities(app);
-    on_compositor_load_clicked(NULL, app);
-    connect_display_edit_autosave_signals(app);
-    connect_themes_autosave_signals(app);
-    connect_window_manager_autosave_signals(app);
-    connect_compositor_autosave_signals(app);
-    app->display_edit_refresh_timeout_id = g_timeout_add_seconds(60, refresh_display_edit_runtime, app);
+    dc_app_reload_outputs(app);
+    dc_app_audio_load(app);
+    dc_app_display_edit_load(app);
+    dc_app_themes_load(app);
+    dc_app_window_manager_load(app);
+    dc_app_display_edit_configure_capabilities(app);
+    dc_app_compositor_load(app);
+    dc_app_power_load(app);
+    dc_app_keyboard_load(app);
+    dc_app_mouse_load(app);
+    dc_app_audio_connect_signals(app);
+    dc_app_display_edit_connect_signals(app);
+    dc_app_themes_connect_signals(app);
+    dc_app_window_manager_connect_signals(app);
+    dc_app_compositor_connect_signals(app);
+    dc_app_power_connect_signals(app);
+    dc_app_keyboard_connect_signals(app);
+    dc_app_mouse_connect_signals(app);
+    app->display_edit_refresh_timeout_id = g_timeout_add_seconds(60, dc_app_display_edit_refresh_runtime, app);
 }
 
 static DcAppController *dc_app_controller_new(char **error_message) {
@@ -1599,8 +178,10 @@ static DcAppController *dc_app_controller_new(char **error_message) {
         g_free(app);
         return NULL;
     }
+    app->power_service = dc_power_service_new();
+    app->input_service = dc_input_service_new();
 
-    install_app_css();
+    dc_app_install_css();
     app->gtk_app = gtk_application_new("com.displaycore.settings", G_APPLICATION_DEFAULT_FLAGS);
     g_signal_connect(app->gtk_app, "activate", G_CALLBACK(activate), app);
     return app;
@@ -1611,10 +192,13 @@ static void dc_app_controller_free(DcAppController *app) {
         return;
     }
 
-    clear_rows(app);
+    dc_app_clear_rows(app);
 
     if (app->display_page != NULL) {
         dc_display_page_free(app->display_page);
+    }
+    if (app->audio_page != NULL) {
+        dc_audio_page_free(app->audio_page);
     }
     if (app->display_edit_page != NULL) {
         dc_display_edit_page_free(app->display_edit_page);
@@ -1627,6 +211,15 @@ static void dc_app_controller_free(DcAppController *app) {
     }
     if (app->compositor_page != NULL) {
         dc_compositor_page_free(app->compositor_page);
+    }
+    if (app->power_page != NULL) {
+        dc_power_page_free(app->power_page);
+    }
+    if (app->keyboard_page != NULL) {
+        dc_keyboard_page_free(app->keyboard_page);
+    }
+    if (app->mouse_page != NULL) {
+        dc_mouse_page_free(app->mouse_page);
     }
     if (app->preview != NULL) {
         dc_preview_canvas_free(app->preview);
@@ -1646,6 +239,9 @@ static void dc_app_controller_free(DcAppController *app) {
     if (app->display_edit_refresh_timeout_id != 0) {
         g_source_remove(app->display_edit_refresh_timeout_id);
     }
+    if (app->audio_refresh_idle_id != 0) {
+        g_source_remove(app->audio_refresh_idle_id);
+    }
 
     if (app->gtk_app != NULL) {
         g_object_unref(app->gtk_app);
@@ -1654,6 +250,13 @@ static void dc_app_controller_free(DcAppController *app) {
     if (app->service != NULL) {
         dc_xrandr_service_free(app->service);
     }
+    if (app->power_service != NULL) {
+        g_object_unref(app->power_service);
+    }
+    if (app->input_service != NULL) {
+        g_object_unref(app->input_service);
+    }
+    dc_audio_service_cleanup();
 
     g_free(app);
 }
