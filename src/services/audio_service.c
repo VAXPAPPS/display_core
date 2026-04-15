@@ -1,17 +1,9 @@
 #include "services/audio_service.h"
+#include <pulse/pulseaudio.h>
+#include <string.h>
 
-#include <gio/gio.h>
-
-#define DC_AUDIO_DBUS_NAME "org.venom.Audio"
-#define DC_AUDIO_DBUS_PATH "/org/venom/Audio"
-#define DC_AUDIO_DBUS_INTERFACE "org.venom.Audio"
-
-static GDBusConnection *audio_connection = NULL;
-static guint devices_signal_id = 0;
-static guint apps_signal_id = 0;
-static guint overamplification_signal_id = 0;
-static guint volume_signal_id = 0;
-static guint mute_signal_id = 0;
+static pa_threaded_mainloop *pa_ml = NULL;
+static pa_context *pa_ctx = NULL;
 
 static void (*devices_changed_callback)(void *userdata) = NULL;
 static void *devices_changed_user_data = NULL;
@@ -20,393 +12,539 @@ static void *apps_changed_user_data = NULL;
 static void (*overamplification_changed_callback)(void *userdata) = NULL;
 static void *overamplification_changed_user_data = NULL;
 
+static gboolean overamplification_enabled = FALSE;
+static guint idle_dispatch_devices_id = 0;
+static guint idle_dispatch_apps_id = 0;
+
+static char *default_sink_name = NULL;
+static char *default_source_name = NULL;
+
+static void success_cb(pa_context *c, int success, void *userdata);
+
 static void set_error(char **error_message, const char *message) {
-    if (error_message == NULL) {
-        return;
+    if (error_message) {
+        g_free(*error_message);
+        *error_message = g_strdup(message);
     }
-
-    g_free(*error_message);
-    *error_message = g_strdup(message);
 }
 
-static void set_gerror_message(char **error_message, const char *fallback, GError *error) {
-    if (error != NULL && error->message != NULL) {
-        set_error(error_message, error->message);
-        return;
-    }
-
-    set_error(error_message, fallback);
-}
-
-static void dispatch_devices_changed(void) {
-    if (devices_changed_callback != NULL) {
+static gboolean dispatch_devices_idle(gpointer user_data) {
+    (void)user_data;
+    idle_dispatch_devices_id = 0;
+    if (devices_changed_callback) {
         devices_changed_callback(devices_changed_user_data);
     }
+    return G_SOURCE_REMOVE;
 }
 
-static void dispatch_apps_changed(void) {
-    if (apps_changed_callback != NULL) {
+static void schedule_devices_changed(void) {
+    if (idle_dispatch_devices_id == 0) {
+        idle_dispatch_devices_id = g_idle_add(dispatch_devices_idle, NULL);
+    }
+}
+
+static gboolean dispatch_apps_idle(gpointer user_data) {
+    (void)user_data;
+    idle_dispatch_apps_id = 0;
+    if (apps_changed_callback) {
         apps_changed_callback(apps_changed_user_data);
     }
+    return G_SOURCE_REMOVE;
 }
 
-static void dispatch_overamplification_changed(void) {
-    if (overamplification_changed_callback != NULL) {
-        overamplification_changed_callback(overamplification_changed_user_data);
-    }
-}
-
-static void on_dbus_signal(GDBusConnection *connection,
-                           const gchar *sender_name,
-                           const gchar *object_path,
-                           const gchar *interface_name,
-                           const gchar *signal_name,
-                           GVariant *parameters,
-                           gpointer user_data) {
-    (void) connection;
-    (void) sender_name;
-    (void) object_path;
-    (void) interface_name;
-    (void) parameters;
-    (void) user_data;
-
-    if (g_strcmp0(signal_name, "DevicesChanged") == 0 ||
-        g_strcmp0(signal_name, "VolumeChanged") == 0 ||
-        g_strcmp0(signal_name, "MuteChanged") == 0) {
-        dispatch_devices_changed();
-        return;
-    }
-
-    if (g_strcmp0(signal_name, "AppsChanged") == 0) {
-        dispatch_apps_changed();
-        return;
-    }
-
-    if (g_strcmp0(signal_name, "OveramplificationChanged") == 0) {
-        dispatch_overamplification_changed();
+static void schedule_apps_changed(void) {
+    if (idle_dispatch_apps_id == 0) {
+        idle_dispatch_apps_id = g_idle_add(dispatch_apps_idle, NULL);
     }
 }
 
-static gboolean ensure_connection(char **error_message) {
-    GError *error = NULL;
-
-    if (audio_connection != NULL) {
-        return TRUE;
+static void server_info_cb(pa_context *c, const pa_server_info *i, void *userdata) {
+    (void)c;
+    (void)userdata;
+    if (i) {
+        g_free(default_sink_name);
+        default_sink_name = g_strdup(i->default_sink_name);
+        g_free(default_source_name);
+        default_source_name = g_strdup(i->default_source_name);
     }
+    pa_threaded_mainloop_signal(pa_ml, 0);
+}
 
-    audio_connection = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
-    if (audio_connection == NULL) {
-        set_gerror_message(error_message, "Failed to connect to the session D-Bus.", error);
-        g_clear_error(&error);
-        return FALSE;
+static void subscription_cb(pa_context *c, pa_subscription_event_type_t t, uint32_t index, void *userdata) {
+    (void)c;
+    (void)index;
+    (void)userdata;
+
+    int facility = t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK;
+
+    if (facility == PA_SUBSCRIPTION_EVENT_SINK ||
+        facility == PA_SUBSCRIPTION_EVENT_SOURCE ||
+        facility == PA_SUBSCRIPTION_EVENT_SERVER) {
+        
+        if (facility == PA_SUBSCRIPTION_EVENT_SERVER) {
+            pa_operation *o = pa_context_get_server_info(c, server_info_cb, NULL);
+            if (o) pa_operation_unref(o);
+        }
+        
+        schedule_devices_changed();
+    } else if (facility == PA_SUBSCRIPTION_EVENT_SINK_INPUT) {
+        schedule_apps_changed();
     }
+}
 
+static void context_state_cb(pa_context *c, void *userdata) {
+    (void)userdata;
+    pa_context_state_t state = pa_context_get_state(c);
+    if (state == PA_CONTEXT_READY || state == PA_CONTEXT_FAILED || state == PA_CONTEXT_TERMINATED) {
+        pa_threaded_mainloop_signal(pa_ml, 0);
+    }
+}
+
+static gboolean wait_for_operation(pa_operation *o) {
+    if (!o) return FALSE;
+    while (pa_operation_get_state(o) == PA_OPERATION_RUNNING) {
+        pa_threaded_mainloop_wait(pa_ml);
+    }
+    pa_operation_unref(o);
     return TRUE;
-}
-
-static GVariant *call_method(const gchar *method_name,
-                             GVariant *parameters,
-                             const GVariantType *reply_type,
-                             char **error_message) {
-    GError *error = NULL;
-    GVariant *result;
-
-    if (!ensure_connection(error_message)) {
-        return NULL;
-    }
-
-    result = g_dbus_connection_call_sync(audio_connection,
-                                         DC_AUDIO_DBUS_NAME,
-                                         DC_AUDIO_DBUS_PATH,
-                                         DC_AUDIO_DBUS_INTERFACE,
-                                         method_name,
-                                         parameters,
-                                         reply_type,
-                                         G_DBUS_CALL_FLAGS_NONE,
-                                         -1,
-                                         NULL,
-                                         &error);
-    if (result == NULL) {
-        set_gerror_message(error_message, "Audio daemon request failed.", error);
-        g_clear_error(&error);
-        return NULL;
-    }
-
-    return result;
-}
-
-static gboolean call_boolean_method(const gchar *method_name,
-                                    GVariant *parameters,
-                                    char **error_message) {
-    GVariant *result;
-    gboolean success = FALSE;
-
-    result = call_method(method_name, parameters, G_VARIANT_TYPE("(b)"), error_message);
-    if (result == NULL) {
-        return FALSE;
-    }
-
-    g_variant_get(result, "(b)", &success);
-    g_variant_unref(result);
-
-    if (!success && error_message != NULL && *error_message == NULL) {
-        set_error(error_message, "Audio daemon rejected the request.");
-    }
-
-    return success;
-}
-
-static gint call_int_method(const gchar *method_name, gint fallback_value) {
-    GVariant *result;
-    gint value = fallback_value;
-
-    result = call_method(method_name, NULL, G_VARIANT_TYPE("(i)"), NULL);
-    if (result == NULL) {
-        return fallback_value;
-    }
-
-    g_variant_get(result, "(i)", &value);
-    g_variant_unref(result);
-    return value;
-}
-
-static gboolean call_bool_method(const gchar *method_name, gboolean fallback_value) {
-    GVariant *result;
-    gboolean value = fallback_value;
-
-    result = call_method(method_name, NULL, G_VARIANT_TYPE("(b)"), NULL);
-    if (result == NULL) {
-        return fallback_value;
-    }
-
-    g_variant_get(result, "(b)", &value);
-    g_variant_unref(result);
-    return value;
-}
-
-static void subscribe_signal(guint *subscription_id, const gchar *signal_name) {
-    if (audio_connection == NULL || *subscription_id != 0) {
-        return;
-    }
-
-    *subscription_id = g_dbus_connection_signal_subscribe(audio_connection,
-                                                          DC_AUDIO_DBUS_NAME,
-                                                          DC_AUDIO_DBUS_INTERFACE,
-                                                          signal_name,
-                                                          DC_AUDIO_DBUS_PATH,
-                                                          NULL,
-                                                          G_DBUS_SIGNAL_FLAGS_NONE,
-                                                          on_dbus_signal,
-                                                          NULL,
-                                                          NULL);
 }
 
 gboolean dc_audio_service_init(char **error_message) {
-    GVariant *result;
+    if (pa_ml != NULL) return TRUE;
 
-    if (!ensure_connection(error_message)) {
+    pa_ml = pa_threaded_mainloop_new();
+    if (!pa_ml) {
+        set_error(error_message, "Failed to create PulseAudio mainloop");
         return FALSE;
     }
 
-    result = call_method("GetVolume", NULL, G_VARIANT_TYPE("(i)"), error_message);
-    if (result == NULL) {
+    if (pa_threaded_mainloop_start(pa_ml) < 0) {
+        set_error(error_message, "Failed to start PulseAudio mainloop");
+        pa_threaded_mainloop_free(pa_ml);
+        pa_ml = NULL;
         return FALSE;
     }
-    g_variant_unref(result);
 
-    subscribe_signal(&devices_signal_id, "DevicesChanged");
-    subscribe_signal(&apps_signal_id, "AppsChanged");
-    subscribe_signal(&overamplification_signal_id, "OveramplificationChanged");
-    subscribe_signal(&volume_signal_id, "VolumeChanged");
-    subscribe_signal(&mute_signal_id, "MuteChanged");
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_ctx = pa_context_new(pa_threaded_mainloop_get_api(pa_ml), "display-settings");
+    if (!pa_ctx) {
+        pa_threaded_mainloop_unlock(pa_ml);
+        set_error(error_message, "Failed to create PulseAudio context");
+        goto fail;
+    }
 
+    pa_context_set_state_callback(pa_ctx, context_state_cb, NULL);
+    if (pa_context_connect(pa_ctx, NULL, PA_CONTEXT_NOFLAGS, NULL) < 0) {
+        pa_threaded_mainloop_unlock(pa_ml);
+        set_error(error_message, "Failed to connect to PulseAudio service");
+        goto fail;
+    }
+
+    while (TRUE) {
+        pa_context_state_t state = pa_context_get_state(pa_ctx);
+        if (state == PA_CONTEXT_READY || state == PA_CONTEXT_FAILED || state == PA_CONTEXT_TERMINATED) {
+            break;
+        }
+        pa_threaded_mainloop_wait(pa_ml);
+    }
+
+    if (pa_context_get_state(pa_ctx) != PA_CONTEXT_READY) {
+        pa_threaded_mainloop_unlock(pa_ml);
+        set_error(error_message, "Failed to connect to PulseAudio service (not ready)");
+        goto fail;
+    }
+
+    pa_context_set_subscribe_callback(pa_ctx, subscription_cb, NULL);
+    pa_operation *o = pa_context_subscribe(pa_ctx, PA_SUBSCRIPTION_MASK_SINK | PA_SUBSCRIPTION_MASK_SOURCE | PA_SUBSCRIPTION_MASK_SINK_INPUT | PA_SUBSCRIPTION_MASK_SERVER, success_cb, NULL);
+    wait_for_operation(o);
+
+    o = pa_context_get_server_info(pa_ctx, server_info_cb, NULL);
+    wait_for_operation(o);
+
+    pa_threaded_mainloop_unlock(pa_ml);
     return TRUE;
+
+fail:
+    if (pa_ctx) {
+        pa_context_unref(pa_ctx);
+        pa_ctx = NULL;
+    }
+    if (pa_ml) {
+        pa_threaded_mainloop_stop(pa_ml);
+        pa_threaded_mainloop_free(pa_ml);
+        pa_ml = NULL;
+    }
+    return FALSE;
 }
 
 void dc_audio_service_cleanup(void) {
-    if (audio_connection != NULL) {
-        if (devices_signal_id != 0) {
-            g_dbus_connection_signal_unsubscribe(audio_connection, devices_signal_id);
-            devices_signal_id = 0;
+    if (pa_ml) {
+        pa_threaded_mainloop_lock(pa_ml);
+        if (pa_ctx) {
+            pa_context_disconnect(pa_ctx);
+            pa_context_unref(pa_ctx);
+            pa_ctx = NULL;
         }
-        if (apps_signal_id != 0) {
-            g_dbus_connection_signal_unsubscribe(audio_connection, apps_signal_id);
-            apps_signal_id = 0;
-        }
-        if (overamplification_signal_id != 0) {
-            g_dbus_connection_signal_unsubscribe(audio_connection, overamplification_signal_id);
-            overamplification_signal_id = 0;
-        }
-        if (volume_signal_id != 0) {
-            g_dbus_connection_signal_unsubscribe(audio_connection, volume_signal_id);
-            volume_signal_id = 0;
-        }
-        if (mute_signal_id != 0) {
-            g_dbus_connection_signal_unsubscribe(audio_connection, mute_signal_id);
-            mute_signal_id = 0;
-        }
-
-        g_clear_object(&audio_connection);
+        pa_threaded_mainloop_unlock(pa_ml);
+        pa_threaded_mainloop_stop(pa_ml);
+        pa_threaded_mainloop_free(pa_ml);
+        pa_ml = NULL;
     }
+
+    if (idle_dispatch_devices_id) {
+        g_source_remove(idle_dispatch_devices_id);
+        idle_dispatch_devices_id = 0;
+    }
+    if (idle_dispatch_apps_id) {
+        g_source_remove(idle_dispatch_apps_id);
+        idle_dispatch_apps_id = 0;
+    }
+
+    g_free(default_sink_name);
+    default_sink_name = NULL;
+    g_free(default_source_name);
+    default_source_name = NULL;
 }
 
 gboolean dc_audio_service_is_ready(void) {
-    return audio_connection != NULL;
+    return pa_ctx != NULL && pa_context_get_state(pa_ctx) == PA_CONTEXT_READY;
+}
+
+static gint pa_volume_to_gint(const pa_cvolume *cv) {
+    pa_volume_t v = pa_cvolume_avg(cv);
+    return (gint)((v * 100 + PA_VOLUME_NORM / 2) / PA_VOLUME_NORM);
+}
+
+static pa_cvolume gint_to_pa_volume(const pa_cvolume *orig_cv, gint vol) {
+    pa_cvolume out = *orig_cv;
+    pa_volume_t target_v = (pa_volume_t)((vol * PA_VOLUME_NORM + 50) / 100);
+    if (out.channels == 0) {
+        pa_cvolume_set(&out, 2, target_v);
+    } else {
+        pa_cvolume_scale(&out, target_v);
+    }
+    return out;
+}
+
+typedef struct {
+    gint param_int;
+    gboolean param_bool;
+    gboolean success;
+    char **error_message;
+} OpState;
+
+static void success_cb(pa_context *c, int success, void *userdata) {
+    (void)c;
+    if (userdata) {
+        OpState *state = userdata;
+        state->success = (success != 0);
+        if (!success && state->error_message) {
+            set_error(state->error_message, "PulseAudio operation rejected.");
+        }
+    }
+    pa_threaded_mainloop_signal(pa_ml, 0);
+}
+
+typedef struct {
+    gint vol;
+    gboolean muted;
+} SingleState;
+
+static void single_sink_info_cb(pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
+    (void)c;
+    if (eol > 0) {
+        pa_threaded_mainloop_signal(pa_ml, 0);
+        return;
+    }
+    SingleState *state = userdata;
+    state->vol = pa_volume_to_gint(&i->volume);
+    state->muted = (i->mute != 0);
+}
+
+static void single_source_info_cb(pa_context *c, const pa_source_info *i, int eol, void *userdata) {
+    (void)c;
+    if (eol > 0) {
+        pa_threaded_mainloop_signal(pa_ml, 0);
+        return;
+    }
+    SingleState *state = userdata;
+    state->vol = pa_volume_to_gint(&i->volume);
+    state->muted = (i->mute != 0);
 }
 
 gint dc_audio_service_get_output_volume(void) {
-    return call_int_method("GetVolume", 0);
-}
-
-gboolean dc_audio_service_set_output_volume(gint volume, char **error_message) {
-    return call_boolean_method("SetVolume", g_variant_new("(i)", volume), error_message);
+    if (!dc_audio_service_is_ready() || !default_sink_name) return 0;
+    SingleState state = {0, FALSE};
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_get_sink_info_by_name(pa_ctx, default_sink_name, single_sink_info_cb, &state);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    return state.vol;
 }
 
 gboolean dc_audio_service_get_output_muted(void) {
-    return call_bool_method("GetMuted", FALSE);
-}
-
-gboolean dc_audio_service_set_output_muted(gboolean muted, char **error_message) {
-    return call_boolean_method("SetMuted", g_variant_new("(b)", muted), error_message);
+    if (!dc_audio_service_is_ready() || !default_sink_name) return FALSE;
+    SingleState state = {0, FALSE};
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_get_sink_info_by_name(pa_ctx, default_sink_name, single_sink_info_cb, &state);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    return state.muted;
 }
 
 gint dc_audio_service_get_input_volume(void) {
-    return call_int_method("GetMicVolume", 0);
-}
-
-gboolean dc_audio_service_set_input_volume(gint volume, char **error_message) {
-    return call_boolean_method("SetMicVolume", g_variant_new("(i)", volume), error_message);
+    if (!dc_audio_service_is_ready() || !default_source_name) return 0;
+    SingleState state = {0, FALSE};
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_get_source_info_by_name(pa_ctx, default_source_name, single_source_info_cb, &state);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    return state.vol;
 }
 
 gboolean dc_audio_service_get_input_muted(void) {
-    return call_bool_method("GetMicMuted", FALSE);
+    if (!dc_audio_service_is_ready() || !default_source_name) return FALSE;
+    SingleState state = {0, FALSE};
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_get_source_info_by_name(pa_ctx, default_source_name, single_source_info_cb, &state);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    return state.muted;
+}
+
+// Flat getters for volume modification
+static void output_volume_set_cb(pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
+    if (eol > 0) {
+        pa_threaded_mainloop_signal(pa_ml, 0);
+        return;
+    }
+    OpState *state = userdata;
+    pa_cvolume modified = gint_to_pa_volume(&i->volume, state->param_int);
+    pa_operation *o = pa_context_set_sink_volume_by_name(c, i->name, &modified, NULL, NULL);
+    if (o) pa_operation_unref(o);
+    state->success = TRUE;
+}
+
+gboolean dc_audio_service_set_output_volume(gint volume, char **error_message) {
+    if (!dc_audio_service_is_ready() || !default_sink_name) return FALSE;
+    OpState state = {volume, FALSE, FALSE, error_message};
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_get_sink_info_by_name(pa_ctx, default_sink_name, output_volume_set_cb, &state);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    return state.success;
+}
+
+gboolean dc_audio_service_set_output_muted(gboolean muted, char **error_message) {
+    if (!dc_audio_service_is_ready() || !default_sink_name) return FALSE;
+    OpState state = {0, muted, FALSE, error_message};
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_set_sink_mute_by_name(pa_ctx, default_sink_name, muted, success_cb, &state);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    return state.success;
+}
+
+static void input_volume_set_cb(pa_context *c, const pa_source_info *i, int eol, void *userdata) {
+    if (eol > 0) {
+        pa_threaded_mainloop_signal(pa_ml, 0);
+        return;
+    }
+    OpState *state = userdata;
+    pa_cvolume modified = gint_to_pa_volume(&i->volume, state->param_int);
+    pa_operation *o = pa_context_set_source_volume_by_name(c, i->name, &modified, NULL, NULL);
+    if (o) pa_operation_unref(o);
+    state->success = TRUE;
+}
+
+gboolean dc_audio_service_set_input_volume(gint volume, char **error_message) {
+    if (!dc_audio_service_is_ready() || !default_source_name) return FALSE;
+    OpState state = {volume, FALSE, FALSE, error_message};
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_get_source_info_by_name(pa_ctx, default_source_name, input_volume_set_cb, &state);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    return state.success;
 }
 
 gboolean dc_audio_service_set_input_muted(gboolean muted, char **error_message) {
-    return call_boolean_method("SetMicMuted", g_variant_new("(b)", muted), error_message);
+    if (!dc_audio_service_is_ready() || !default_source_name) return FALSE;
+    OpState state = {0, muted, FALSE, error_message};
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_set_source_mute_by_name(pa_ctx, default_source_name, muted, success_cb, &state);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    return state.success;
+}
+
+// Lists
+typedef struct {
+    GList *list;
+    const char *default_name;
+} ListState;
+
+static void sink_info_list_cb(pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
+    (void)c;
+    if (eol > 0) {
+        pa_threaded_mainloop_signal(pa_ml, 0);
+        return;
+    }
+    
+    ListState *state = userdata;
+    DcAudioDevice *dev = g_new0(DcAudioDevice, 1);
+    dev->name = g_strdup(i->name);
+    dev->description = g_strdup(i->description);
+    dev->volume = pa_volume_to_gint(&i->volume);
+    dev->muted = (i->mute != 0);
+    dev->is_default = (g_strcmp0(i->name, state->default_name) == 0);
+    
+    state->list = g_list_append(state->list, dev);
 }
 
 GList *dc_audio_service_list_outputs(char **error_message) {
-    GVariant *result;
-    GVariant *array;
-    GVariantIter iter;
-    GList *devices = NULL;
-    const gchar *name;
-    const gchar *description;
-    gint volume;
-    gboolean is_default;
-
-    result = call_method("GetSinks", NULL, G_VARIANT_TYPE("(a(ssib))"), error_message);
-    if (result == NULL) {
-        return NULL;
-    }
-
-    array = g_variant_get_child_value(result, 0);
-    g_variant_iter_init(&iter, array);
-    while (g_variant_iter_loop(&iter, "(&s&sib)", &name, &description, &volume, &is_default)) {
-        DcAudioDevice *device = g_new0(DcAudioDevice, 1);
-
-        device->name = g_strdup(name);
-        device->description = g_strdup(description);
-        device->volume = volume;
-        device->is_default = is_default;
-        devices = g_list_append(devices, device);
-    }
-
-    g_variant_unref(array);
-    g_variant_unref(result);
-    return devices;
+    (void)error_message;
+    if (!dc_audio_service_is_ready()) return NULL;
+    
+    ListState state = {NULL, default_sink_name};
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_get_sink_info_list(pa_ctx, sink_info_list_cb, &state);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    
+    return state.list;
 }
 
 gboolean dc_audio_service_set_default_output(const char *name, char **error_message) {
-    return call_boolean_method("SetDefaultSink", g_variant_new("(s)", name), error_message);
+    if (!dc_audio_service_is_ready()) return FALSE;
+    OpState state = {0, FALSE, FALSE, error_message};
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_set_default_sink(pa_ctx, name, success_cb, &state);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    return state.success;
+}
+
+static void source_info_list_cb(pa_context *c, const pa_source_info *i, int eol, void *userdata) {
+    (void)c;
+    if (eol > 0) {
+        pa_threaded_mainloop_signal(pa_ml, 0);
+        return;
+    }
+    
+    if (i->monitor_of_sink != PA_INVALID_INDEX) {
+        return;
+    }
+
+    ListState *state = userdata;
+    DcAudioDevice *dev = g_new0(DcAudioDevice, 1);
+    dev->name = g_strdup(i->name);
+    dev->description = g_strdup(i->description);
+    dev->volume = pa_volume_to_gint(&i->volume);
+    dev->muted = (i->mute != 0);
+    dev->is_default = (g_strcmp0(i->name, state->default_name) == 0);
+    
+    state->list = g_list_append(state->list, dev);
 }
 
 GList *dc_audio_service_list_inputs(char **error_message) {
-    GVariant *result;
-    GVariant *array;
-    GVariantIter iter;
-    GList *devices = NULL;
-    const gchar *name;
-    const gchar *description;
-    gint volume;
-    gboolean is_default;
-
-    result = call_method("GetSources", NULL, G_VARIANT_TYPE("(a(ssib))"), error_message);
-    if (result == NULL) {
-        return NULL;
-    }
-
-    array = g_variant_get_child_value(result, 0);
-    g_variant_iter_init(&iter, array);
-    while (g_variant_iter_loop(&iter, "(&s&sib)", &name, &description, &volume, &is_default)) {
-        DcAudioDevice *device = g_new0(DcAudioDevice, 1);
-
-        device->name = g_strdup(name);
-        device->description = g_strdup(description);
-        device->volume = volume;
-        device->is_default = is_default;
-        devices = g_list_append(devices, device);
-    }
-
-    g_variant_unref(array);
-    g_variant_unref(result);
-    return devices;
+    (void)error_message;
+    if (!dc_audio_service_is_ready()) return NULL;
+    
+    ListState state = {NULL, default_source_name};
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_get_source_info_list(pa_ctx, source_info_list_cb, &state);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    
+    return state.list;
 }
 
 gboolean dc_audio_service_set_default_input(const char *name, char **error_message) {
-    return call_boolean_method("SetDefaultSource", g_variant_new("(s)", name), error_message);
+    if (!dc_audio_service_is_ready()) return FALSE;
+    OpState state = {0, FALSE, FALSE, error_message};
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_set_default_source(pa_ctx, name, success_cb, &state);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    return state.success;
 }
 
 gboolean dc_audio_service_get_overamplification(void) {
-    return call_bool_method("GetOveramplification", FALSE);
+    return overamplification_enabled;
 }
 
 gboolean dc_audio_service_set_overamplification(gboolean enabled, char **error_message) {
-    return call_boolean_method("SetOveramplification", g_variant_new("(b)", enabled), error_message);
+    (void)error_message;
+    overamplification_enabled = enabled;
+    return TRUE;
+}
+
+static void sink_input_info_list_cb(pa_context *c, const pa_sink_input_info *i, int eol, void *userdata) {
+    (void)c;
+    if (eol > 0) {
+        pa_threaded_mainloop_signal(pa_ml, 0);
+        return;
+    }
+    
+    GList **list = userdata;
+    DcAudioAppStream *app = g_new0(DcAudioAppStream, 1);
+    app->index = i->index;
+    
+    const char *name = pa_proplist_gets(i->proplist, PA_PROP_APPLICATION_NAME);
+    const char *icon = pa_proplist_gets(i->proplist, PA_PROP_APPLICATION_ICON_NAME);
+    
+    app->name = g_strdup(name ? name : i->name);
+    app->icon = g_strdup(icon);
+    app->volume = pa_volume_to_gint(&i->volume);
+    app->muted = (i->mute != 0);
+    app->sink_name = NULL; // We skip mapping the exact sink for simplicity
+
+    *list = g_list_append(*list, app);
 }
 
 GList *dc_audio_service_list_app_streams(char **error_message) {
-    GVariant *result;
-    GVariant *array;
-    GVariantIter iter;
-    GList *apps = NULL;
-    guint32 index;
-    const gchar *name;
-    const gchar *icon;
-    gint volume;
-    gboolean muted;
+    (void)error_message;
+    if (!dc_audio_service_is_ready()) return NULL;
+    
+    GList *list = NULL;
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_get_sink_input_info_list(pa_ctx, sink_input_info_list_cb, &list);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    
+    return list;
+}
 
-    result = call_method("GetAppStreams", NULL, G_VARIANT_TYPE("(a(ussib))"), error_message);
-    if (result == NULL) {
-        return NULL;
+static void app_volume_set_cb(pa_context *c, const pa_sink_input_info *i, int eol, void *userdata) {
+    if (eol > 0) {
+        pa_threaded_mainloop_signal(pa_ml, 0);
+        return;
     }
-
-    array = g_variant_get_child_value(result, 0);
-    g_variant_iter_init(&iter, array);
-    while (g_variant_iter_loop(&iter, "(u&s&sib)", &index, &name, &icon, &volume, &muted)) {
-        DcAudioAppStream *app_stream = g_new0(DcAudioAppStream, 1);
-
-        app_stream->index = index;
-        app_stream->name = g_strdup(name);
-        app_stream->icon = g_strdup(icon);
-        app_stream->volume = volume;
-        app_stream->muted = muted;
-        app_stream->sink_name = NULL;
-        apps = g_list_append(apps, app_stream);
-    }
-
-    g_variant_unref(array);
-    g_variant_unref(result);
-    return apps;
+    OpState *state = userdata;
+    pa_cvolume modified = gint_to_pa_volume(&i->volume, state->param_int);
+    pa_operation *o = pa_context_set_sink_input_volume(c, i->index, &modified, NULL, NULL);
+    if (o) pa_operation_unref(o);
+    state->success = TRUE;
 }
 
 gboolean dc_audio_service_set_app_volume(guint32 index, gint volume, char **error_message) {
-    return call_boolean_method("SetAppVolume", g_variant_new("(ui)", index, volume), error_message);
+    if (!dc_audio_service_is_ready()) return FALSE;
+    OpState state = {volume, FALSE, FALSE, error_message};
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_get_sink_input_info(pa_ctx, index, app_volume_set_cb, &state);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    return state.success;
 }
 
 gboolean dc_audio_service_set_app_muted(guint32 index, gboolean muted, char **error_message) {
-    return call_boolean_method("SetAppMuted", g_variant_new("(ub)", index, muted), error_message);
+    if (!dc_audio_service_is_ready()) return FALSE;
+    OpState state = {0, muted, FALSE, error_message};
+    pa_threaded_mainloop_lock(pa_ml);
+    pa_operation *o = pa_context_set_sink_input_mute(pa_ctx, index, muted, success_cb, &state);
+    wait_for_operation(o);
+    pa_threaded_mainloop_unlock(pa_ml);
+    return state.success;
 }
 
 void dc_audio_service_set_devices_changed_callback(void (*callback)(void *userdata), void *userdata) {
@@ -425,22 +563,18 @@ void dc_audio_service_set_overamplification_changed_callback(void (*callback)(vo
 }
 
 void dc_audio_service_device_free(DcAudioDevice *device) {
-    if (device == NULL) {
-        return;
+    if (device) {
+        g_free(device->name);
+        g_free(device->description);
+        g_free(device);
     }
-
-    g_free(device->name);
-    g_free(device->description);
-    g_free(device);
 }
 
 void dc_audio_service_app_stream_free(DcAudioAppStream *app_stream) {
-    if (app_stream == NULL) {
-        return;
+    if (app_stream) {
+        g_free(app_stream->name);
+        g_free(app_stream->icon);
+        g_free(app_stream->sink_name);
+        g_free(app_stream);
     }
-
-    g_free(app_stream->name);
-    g_free(app_stream->icon);
-    g_free(app_stream->sink_name);
-    g_free(app_stream);
 }
