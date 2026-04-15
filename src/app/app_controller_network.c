@@ -127,6 +127,17 @@ static void on_wifi_disconnect(gpointer data)
     g_timeout_add_seconds(2, on_scan_done_idle, app);
 }
 
+static void on_wifi_forget(const char *ssid, gpointer data)
+{
+    DcAppController *app = data;
+    if (!app->network_service || !ssid) return;
+
+    dc_network_service_forget_ap(app->network_service, ssid);
+    
+    /* Give NetworkManager a moment to process the deletion, then refresh */
+    g_timeout_add_seconds(1, on_scan_done_idle, app);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Ethernet page callbacks (page → controller)
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -190,6 +201,7 @@ void dc_app_wifi_load(DcAppController *app)
         .on_scan        = on_wifi_scan,
         .on_connect     = on_wifi_connect,
         .on_disconnect  = on_wifi_disconnect,
+        .on_forget      = on_wifi_forget,
     };
     dc_wifi_page_set_callbacks(app->wifi_page, &cb, app);
 

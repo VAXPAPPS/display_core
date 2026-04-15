@@ -14,6 +14,7 @@ typedef struct {
                        const char *password,   /* NULL if open */
                        gpointer data);
     void (*on_disconnect)(gpointer data);
+    void (*on_forget)(const char *ssid, gpointer data);
 } DcWifiPageCallbacks;
 
 DcWifiPage *dc_wifi_page_new(void);

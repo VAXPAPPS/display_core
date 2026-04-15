@@ -68,12 +68,14 @@ GList    *dc_network_service_get_access_points(DcNetworkService *self,
 void      dc_network_service_request_scan(DcNetworkService *self,
                                           const char       *wifi_device_path);
 
-/* Connect to an open network (password == NULL) or secured network */
 void      dc_network_service_connect_to_ap(DcNetworkService *self,
                                            const char       *device_path,
                                            const char       *ap_path,
                                            const char       *ssid,
                                            const char       *password);
+
+void      dc_network_service_forget_ap(DcNetworkService *self,
+                                       const char       *ssid);
 
 /* ── Ethernet ───────────────────────────────────────────── */
 /* Returns GList of DcNetworkDevice* for wired devices only */

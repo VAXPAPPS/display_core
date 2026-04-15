@@ -279,6 +279,16 @@ static void on_disconnect_btn_clicked(GtkButton *btn, gpointer user_data)
     }
 }
 
+static void on_forget_btn_clicked(GtkButton *btn, gpointer user_data)
+{
+    DcWifiPage *page = g_object_get_data(G_OBJECT(btn), "page");
+    const char *ssid = g_object_get_data(G_OBJECT(btn), "ssid");
+    (void)user_data;
+    if (page && page->cb.on_forget && ssid) {
+        page->cb.on_forget(ssid, page->user_data);
+    }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Top-bar button callbacks
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -523,6 +533,21 @@ void dc_wifi_page_populate_aps(DcWifiPage *page, GList *aps)
             g_signal_connect(conn_btn, "clicked",
                              G_CALLBACK(on_connect_btn_clicked), NULL);
             gtk_box_pack_start(GTK_BOX(row), conn_btn, FALSE, FALSE, 0);
+
+            if (ap->has_profile && !ap->active) {
+                GtkWidget *forget_btn = gtk_button_new_from_icon_name("user-trash-symbolic", GTK_ICON_SIZE_BUTTON);
+                add_css(forget_btn, "wifi-btn");
+                add_css(forget_btn, "wifi-btn-danger");
+                gtk_widget_set_tooltip_text(forget_btn, "Forget Network");
+                g_object_set_data(G_OBJECT(forget_btn), "page", page);
+                g_object_set_data_full(G_OBJECT(forget_btn), "ssid",
+                                       g_strdup(ap->ssid ? ap->ssid : ""), g_free);
+                gtk_widget_set_valign(forget_btn, GTK_ALIGN_CENTER);
+                gtk_widget_set_margin_start(forget_btn, 4);
+                g_signal_connect(forget_btn, "clicked",
+                                 G_CALLBACK(on_forget_btn_clicked), NULL);
+                gtk_box_pack_start(GTK_BOX(row), forget_btn, FALSE, FALSE, 0);
+            }
         }
 
         gtk_box_pack_start(GTK_BOX(page->ap_list_box), row, FALSE, FALSE, 0);

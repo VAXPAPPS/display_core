@@ -649,6 +649,24 @@ void dc_network_service_connect_to_ap(DcNetworkService *self,
         G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
 }
 
+void dc_network_service_forget_ap(DcNetworkService *self, const char *ssid)
+{
+    if (!self->system_bus || !ssid) return;
+
+    /* Look up the existing profile path for this SSID */
+    GHashTable *saved = nm_build_saved_ssid_map(self);
+    const char *saved_conn = g_hash_table_lookup(saved, ssid);
+
+    if (saved_conn) {
+        g_dbus_connection_call(
+            self->system_bus,
+            NM_BUS, saved_conn, NM_CONN_IFACE, "Delete",
+            NULL, NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
+    }
+    
+    g_hash_table_destroy(saved);
+}
+
 GList *dc_network_service_get_ethernet_devices(DcNetworkService *self)
 {
     if (!self->system_bus) return NULL;
