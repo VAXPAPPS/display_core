@@ -3,6 +3,37 @@
 #include "app_controller_internal.h"
 #include "services/audio_service.h"
 
+static void dc_app_cairo_rounded_rectangle(cairo_t *cr,
+                                           double x,
+                                           double y,
+                                           double width,
+                                           double height,
+                                           double radius) {
+    const double degrees = G_PI / 180.0;
+
+    cairo_new_sub_path(cr);
+    cairo_arc(cr, x + width - radius, y + radius, radius, -90 * degrees, 0 * degrees);
+    cairo_arc(cr, x + width - radius, y + height - radius, radius, 0 * degrees, 90 * degrees);
+    cairo_arc(cr, x + radius, y + height - radius, radius, 90 * degrees, 180 * degrees);
+    cairo_arc(cr, x + radius, y + radius, radius, 180 * degrees, 270 * degrees);
+    cairo_close_path(cr);
+}
+
+static gboolean dc_app_draw_window_background(GtkWidget *widget, cairo_t *cr, gpointer user_data) {
+    GtkAllocation allocation;
+
+    (void) user_data;
+
+    gtk_widget_get_allocation(widget, &allocation);
+    cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.50);
+    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+    dc_app_cairo_rounded_rectangle(cr, 0, 0, allocation.width, allocation.height, 12.0);
+    cairo_fill(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+
+    return FALSE;
+}
+
 void dc_app_add_css_class(GtkWidget *widget, const char *class_name) {
     gtk_style_context_add_class(gtk_widget_get_style_context(widget), class_name);
 }
@@ -80,6 +111,7 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_widget_set_name(app->window, "display-core-window");
     dc_app_add_css_class(app->window, "app-window");
     gtk_widget_set_app_paintable(app->window, TRUE);
+    g_signal_connect(app->window, "draw", G_CALLBACK(dc_app_draw_window_background), NULL);
 
     {
         GdkScreen *screen = gtk_widget_get_screen(app->window);

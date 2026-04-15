@@ -1,10 +1,11 @@
 .app-window {
-  background-color: rgba(0, 0, 0, 0.39);
+  background-color: rgba(0, 0, 0, 0.50);
+  border-radius: 12px;
 }
 
 .app-shell {
-  background-color: rgba(0, 0, 0, 0.39);
-  border-radius: 16px;
+  background-color: rgba(0, 0, 0, 0.50);
+  border-radius: 12px;
 }
 
 .sidebar-card,
