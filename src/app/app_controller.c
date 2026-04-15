@@ -103,6 +103,7 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     app->about_page = dc_about_page_new();
     app->default_apps_page = dc_default_apps_page_new();
     app->system_page = dc_system_page_new();
+    app->bluetooth_page = dc_bluetooth_page_new();
     app->window = gtk_application_window_new(gtk_app);
     gtk_window_set_title(GTK_WINDOW(app->window), "Display Settings");
     gtk_window_set_default_size(GTK_WINDOW(app->window), 980, 760);
@@ -200,6 +201,10 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
                          dc_system_page_get_widget(app->system_page),
                          "system",
                          "System");
+    gtk_stack_add_titled(GTK_STACK(app->stack),
+                         dc_bluetooth_page_get_widget(app->bluetooth_page),
+                         "bluetooth",
+                         "Bluetooth");
 
     dc_app_connect_display_page_signals(app);
     gtk_widget_show_all(app->window);
@@ -216,6 +221,7 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     dc_app_about_load(app);
     dc_app_default_apps_load(app);
     dc_app_system_load(app);
+    dc_app_bluetooth_load(app);
     
     dc_app_audio_connect_signals(app);
     dc_app_display_edit_connect_signals(app);
@@ -227,6 +233,7 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     dc_app_mouse_connect_signals(app);
     dc_app_default_apps_connect_signals(app);
     dc_app_system_connect_signals(app);
+    dc_app_bluetooth_connect_signals(app);
     app->display_edit_refresh_timeout_id = g_timeout_add_seconds(60, dc_app_display_edit_refresh_runtime, app);
 }
 
@@ -243,6 +250,7 @@ static DcAppController *dc_app_controller_new(char **error_message) {
     app->sysinfo_service = dc_sysinfo_service_new();
     app->default_apps_service = dc_default_apps_service_new();
     app->system_service = dc_system_service_new();
+    app->bluetooth_service = dc_bluetooth_service_new();
 
     dc_app_install_css();
     app->gtk_app = gtk_application_new("com.displaycore.settings", G_APPLICATION_DEFAULT_FLAGS);
@@ -293,6 +301,9 @@ static void dc_app_controller_free(DcAppController *app) {
     if (app->system_page != NULL) {
         dc_system_page_free(app->system_page);
     }
+    if (app->bluetooth_page != NULL) {
+        dc_bluetooth_page_free(app->bluetooth_page);
+    }
     if (app->preview != NULL) {
         dc_preview_canvas_free(app->preview);
     }
@@ -336,6 +347,9 @@ static void dc_app_controller_free(DcAppController *app) {
     }
     if (app->system_service != NULL) {
         g_object_unref(app->system_service);
+    }
+    if (app->bluetooth_service != NULL) {
+        g_object_unref(app->bluetooth_service);
     }
     dc_audio_service_cleanup();
 
