@@ -19,12 +19,15 @@
 #include "ui/pages/default_apps_page.h"
 #include "ui/pages/system_page.h"
 #include "ui/pages/bluetooth_page.h"
+#include "ui/pages/wifi_page.h"
+#include "ui/pages/ethernet_page.h"
 #include "services/power_service.h"
 #include "services/input_service.h"
 #include "services/sysinfo_service.h"
 #include "services/default_apps_service.h"
 #include "services/system_service.h"
 #include "services/bluetooth_service.h"
+#include "services/network_service.h"
 #include "ui/preview_canvas.h"
 
 #define DC_REVERT_TIMEOUT_SECONDS 15
@@ -49,12 +52,15 @@ typedef struct {
     DcDefaultAppsPage *default_apps_page;
     DcSystemPage *system_page;
     DcBluetoothPage *bluetooth_page;
+    DcWifiPage *wifi_page;
+    DcEthernetPage *ethernet_page;
     DcPowerService *power_service;
     DcInputService *input_service;
     DcSysinfoService *sysinfo_service;
     DcDefaultAppsService *default_apps_service;
     DcSystemService *system_service;
     DcBluetoothService *bluetooth_service;
+    DcNetworkService *network_service;
     GPtrArray *output_models;
     GPtrArray *rows;
     DcPreviewCanvas *preview;
@@ -125,5 +131,11 @@ void dc_app_system_connect_signals(DcAppController *app);
 
 void dc_app_bluetooth_load(DcAppController *app);
 void dc_app_bluetooth_connect_signals(DcAppController *app);
+
+void dc_app_wifi_load(DcAppController *app);
+void dc_app_wifi_connect_signals(DcAppController *app);
+
+void dc_app_ethernet_load(DcAppController *app);
+void dc_app_ethernet_connect_signals(DcAppController *app);
 
 #endif
