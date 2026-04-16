@@ -39,6 +39,7 @@ typedef struct {
     GtkApplication *gtk_app;
     GtkWidget *window;
     GtkWidget *stack;
+    GtkWidget *sidebar_list;
     DcDisplayPage *display_page;
     DcAudioPage *audio_page;
     DcThemesPage *themes_page;

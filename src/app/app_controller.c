@@ -34,21 +34,192 @@ static gboolean dc_app_draw_window_background(GtkWidget *widget, cairo_t *cr, gp
     return FALSE;
 }
 
+static gboolean dc_app_draw_sidebar_pill(GtkWidget *widget, cairo_t *cr, gpointer user_data) {
+    GtkAllocation allocation;
+    gboolean active;
+    gboolean hovered;
+
+    (void) user_data;
+
+    gtk_widget_get_allocation(widget, &allocation);
+    active = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(widget), "dc-active"));
+    hovered = (gtk_widget_get_state_flags(widget) & GTK_STATE_FLAG_PRELIGHT) != 0;
+
+    dc_app_cairo_rounded_rectangle(cr, 0.5, 0.5,
+                                   allocation.width - 1.0,
+                                   allocation.height - 1.0,
+                                   18.0);
+
+    if (active) {
+        cairo_pattern_t *fill = cairo_pattern_create_linear(0, 0, 0, allocation.height);
+        cairo_pattern_add_color_stop_rgba(fill, 0.0, 0.29, 0.49, 0.80, 0.78);
+        cairo_pattern_add_color_stop_rgba(fill, 1.0, 0.18, 0.29, 0.56, 0.62);
+        cairo_set_source(cr, fill);
+        cairo_fill_preserve(cr);
+        cairo_pattern_destroy(fill);
+
+        cairo_set_source_rgba(cr, 0.39, 0.87, 1.0, 0.95);
+        cairo_set_line_width(cr, 1.4);
+        cairo_stroke(cr);
+    } else if (hovered) {
+        cairo_pattern_t *fill = cairo_pattern_create_linear(0, 0, 0, allocation.height);
+        cairo_pattern_add_color_stop_rgba(fill, 0.0, 0.22, 0.38, 0.58, 0.22);
+        cairo_pattern_add_color_stop_rgba(fill, 1.0, 1.0, 1.0, 1.0, 0.05);
+        cairo_set_source(cr, fill);
+        cairo_fill_preserve(cr);
+        cairo_pattern_destroy(fill);
+
+        cairo_set_source_rgba(cr, 0.40, 0.75, 0.98, 0.34);
+        cairo_set_line_width(cr, 1.0);
+        cairo_stroke(cr);
+    } else {
+        cairo_pattern_t *fill = cairo_pattern_create_linear(0, 0, 0, allocation.height);
+        cairo_pattern_add_color_stop_rgba(fill, 0.0, 1.0, 1.0, 1.0, 0.06);
+        cairo_pattern_add_color_stop_rgba(fill, 1.0, 1.0, 1.0, 1.0, 0.02);
+        cairo_set_source(cr, fill);
+        cairo_fill_preserve(cr);
+        cairo_pattern_destroy(fill);
+
+        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.12);
+        cairo_set_line_width(cr, 1.0);
+        cairo_stroke(cr);
+    }
+
+    return FALSE;
+}
+
+static gboolean dc_app_draw_sidebar_indicator(GtkWidget *widget, cairo_t *cr, gpointer user_data) {
+    GtkAllocation allocation;
+    gboolean active;
+
+    (void) user_data;
+
+    gtk_widget_get_allocation(widget, &allocation);
+    active = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(widget), "dc-active"));
+
+    if (!active) {
+        return FALSE;
+    }
+
+    dc_app_cairo_rounded_rectangle(cr, 0, 0, allocation.width, allocation.height, allocation.width / 2.0);
+    cairo_set_source_rgba(cr, 0.47, 0.91, 1.0, 0.98);
+    cairo_fill(cr);
+
+    return FALSE;
+}
+
+static gboolean dc_app_draw_sidebar_icon_frame(GtkWidget *widget, cairo_t *cr, gpointer user_data) {
+    GtkAllocation allocation;
+    gboolean active;
+
+    (void) user_data;
+
+    gtk_widget_get_allocation(widget, &allocation);
+    active = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(widget), "dc-active"));
+
+    dc_app_cairo_rounded_rectangle(cr, 0.5, 0.5,
+                                   allocation.width - 1.0,
+                                   allocation.height - 1.0,
+                                   allocation.width / 2.0);
+
+    if (active) {
+        cairo_set_source_rgba(cr, 0.36, 0.82, 1.0, 0.24);
+        cairo_fill_preserve(cr);
+        cairo_set_source_rgba(cr, 0.42, 0.86, 1.0, 0.62);
+    } else {
+        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.06);
+        cairo_fill_preserve(cr);
+        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.12);
+    }
+
+    cairo_set_line_width(cr, 1.0);
+    cairo_stroke(cr);
+
+    return FALSE;
+}
+
 void dc_app_add_css_class(GtkWidget *widget, const char *class_name) {
     gtk_style_context_add_class(gtk_widget_get_style_context(widget), class_name);
 }
 
+typedef struct {
+    const char *name;
+    const char *title;
+    const char *icon_name;
+} DcSidebarItem;
+
+static const char *const DC_APP_THEME_CSS_PARTS[] = {
+    ".app-window { background-color: rgba(0, 0, 0, 0.50); border-radius: 12px; }\n",
+    ".app-shell { background-color: rgba(0, 0, 0, 0.50); border-radius: 12px; }\n",
+    ".sidebar-card, .topbar-card, .content-card, .toolbar-card, .preview-card, .display-card { background-color: rgba(14, 14, 14, 0.72); border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 18px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22); }\n",
+    ".toolbar-card, .sidebar-card, .topbar-card, .content-card, .preview-card { padding: 14px; }\n",
+    ".page-shell { padding: 16px; }\n",
+    ".page-title { color: rgba(255, 255, 255, 0.97); font-size: 24px; font-weight: 800; }\n",
+    ".page-subtitle { color: rgba(255, 255, 255, 0.64); font-size: 13px; }\n",
+    ".panel-card { background-color: rgba(14, 14, 14, 0.72); border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 18px; padding: 16px; }\n",
+    ".setting-title { color: rgba(255, 255, 255, 0.92); font-weight: 700; }\n",
+    ".setting-description { color: rgba(255, 255, 255, 0.60); font-size: 12px; }\n",
+    ".toolbar-label { color: rgba(255, 255, 255, 0.86); font-weight: 600; }\n",
+    ".status-pill { color: rgba(255, 255, 255, 0.92); background-color: rgba(255, 255, 255, 0.08); border-radius: 999px; padding: 8px 14px; }\n",
+    "button { color: rgba(255, 255, 255, 0.95); background-image: none; background-color: rgba(255, 255, 255, 0.10); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px; padding: 9px 14px; }\n",
+    "button:hover { background-color: rgba(86, 110, 138, 0.16); }\n",
+    ".suggested-action { background-color: rgba(255, 255, 255, 0.22); }\n",
+    "entry, combobox box, spinbutton { color: rgba(255, 255, 255, 0.95); background-color: rgba(0, 0, 0, 0.24); border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 12px; }\n",
+    "label { color: rgba(255, 255, 255, 0.92); }\n",
+    "frame>border { border-radius: 18px; border-width: 0; }\n",
+    ".display-card { padding: 10px 12px 14px 12px; }\n",
+    ".display-card>label { color: rgba(255, 255, 255, 0.95); font-weight: 700; padding-bottom: 10px; }\n",
+    ".display-muted { color: rgba(255, 255, 255, 0.66); }\n",
+    ".preview-hint { color: rgba(255, 255, 255, 0.70); }\n",
+    ".topbar-card { padding: 10px 14px; }\n",
+    "stackswitcher.topbar-switcher { background-color: transparent; }\n",
+    "stackswitcher.topbar-switcher>button { color: rgba(255, 255, 255, 0.78); background-color: transparent; border: none; border-radius: 12px; padding: 10px 16px; margin: 0 4px; box-shadow: none; }\n",
+    "stackswitcher.topbar-switcher>button:hover { background-color: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.94); }\n",
+    "stackswitcher.topbar-switcher>button:checked { background-color: rgba(255, 255, 255, 0.16); color: rgba(255, 255, 255, 0.98); border: 1px solid rgba(255, 255, 255, 0.08); }\n",
+    ".dc-sidebar { background-color: rgba(12, 14, 24, 0.76); background-image: linear-gradient(180deg, rgba(34, 45, 88, 0.56) 0%, rgba(18, 18, 31, 0.82) 46%, rgba(15, 12, 24, 0.88) 100%); border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 30px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 24px 54px rgba(0, 0, 0, 0.34); padding: 14px 10px; }\n",
+    ".dc-sidebar scrolledwindow, .dc-sidebar viewport, .dc-sidebar-scroller { background-color: transparent; border: none; }\n",
+    ".dc-sidebar list, .dc-sidebar-list { background-color: transparent; padding: 0 2px 2px 2px; }\n",
+    ".dc-sidebar list row, .dc-sidebar-list row, .dc-sidebar-row { background: transparent; border: none; box-shadow: none; padding: 0; }\n",
+    ".dc-sidebar list row:selected, .dc-sidebar list row:selected:hover, .dc-sidebar-list row:selected, .dc-sidebar-list row:selected:hover, .dc-sidebar-row:selected, .dc-sidebar-row:selected:hover { background: transparent; border: none; box-shadow: none; }\n",
+    ".dc-sidebar-row-box { padding: 13px 16px; }\n",
+    ".dc-sidebar-icon { color: rgba(255, 255, 255, 0.86); opacity: 0.96; }\n",
+    ".dc-sidebar-icon-active { color: rgba(111, 225, 255, 0.98); }\n",
+    ".dc-sidebar-label { color: rgba(255, 255, 255, 0.90); font-size: 15px; font-weight: 800; letter-spacing: 0.3px; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.24); }\n",
+    ".dc-sidebar-label-active { color: rgba(255, 255, 255, 0.98); }\n",
+    ".dc-sidebar scrollbar { background: transparent; border: none; }\n",
+    ".dc-sidebar scrollbar slider { background-color: rgba(255, 255, 255, 0.10); border-radius: 999px; min-width: 6px; min-height: 24px; }\n"
+};
+
+static const DcSidebarItem DC_SIDEBAR_ITEMS[] = {
+    { "wifi", "Wi-Fi", "network-wireless-symbolic" },
+    { "bluetooth", "Bluetooth", "bluetooth-active-symbolic" },
+    { "ethernet", "Ethernet", "network-wired-symbolic" },
+    { "display", "Display", "video-display-symbolic" },
+    { "audio", "Sound", "audio-speakers-symbolic" },
+    { "mouse", "Mouse", "input-mouse-symbolic" },
+    { "keyboard", "Keyboard", "input-keyboard-symbolic" },
+    { "power", "Power", "system-shutdown-symbolic" },
+    { "themes", "Themes", "applications-graphics-symbolic" },
+    { "window-manager", "Window Manager", "preferences-system-windows-symbolic" },
+    { "compositor", "Compositor", "preferences-desktop-effects-symbolic" },
+    { "display-edit", "Display Edit", "document-edit-symbolic" },
+    { "default_apps", "Default Apps", "preferences-desktop-apps-symbolic" },
+    { "system", "System", "emblem-system-symbolic" },
+    { "about", "About", "help-about-symbolic" }
+};
+
 void dc_app_install_css(void) {
     GtkCssProvider *provider;
     GdkScreen *screen;
-    char *cwd;
-    char *css_path;
     GError *error = NULL;
+    GString *css_data;
 
     provider = gtk_css_provider_new();
-    cwd = g_get_current_dir();
-    css_path = g_build_filename(cwd, "assets", "theme.css", NULL);
-    gtk_css_provider_load_from_path(provider, css_path, &error);
+    css_data = g_string_new(NULL);
+    for (gsize i = 0; i < G_N_ELEMENTS(DC_APP_THEME_CSS_PARTS); i++) {
+        g_string_append(css_data, DC_APP_THEME_CSS_PARTS[i]);
+    }
+    gtk_css_provider_load_from_data(provider, css_data->str, -1, &error);
     screen = gdk_screen_get_default();
     if (screen != NULL) {
         gtk_style_context_add_provider_for_screen(screen,
@@ -57,12 +228,11 @@ void dc_app_install_css(void) {
     }
 
     if (error != NULL) {
-        g_warning("Failed to load CSS from %s: %s", css_path, error->message);
+        g_warning("Failed to load embedded CSS: %s", error->message);
         g_error_free(error);
     }
 
-    g_free(cwd);
-    g_free(css_path);
+    g_string_free(css_data, TRUE);
     g_object_unref(provider);
 }
 
@@ -82,12 +252,179 @@ char *dc_app_resolve_venom_config_path(void) {
     return g_strdup(DC_PRIMARY_VENOM_CONFIG_PATH);
 }
 
+static gboolean on_sidebar_row_button_press(GtkWidget *widget, GdkEventButton *event, gpointer user_data);
+
+static GtkWidget *dc_app_create_sidebar_row(const DcSidebarItem *item) {
+    GtkWidget *row;
+    GtkWidget *pill;
+    GtkWidget *pill_box;
+    GtkWidget *content;
+    GtkWidget *indicator;
+    GtkWidget *icon_frame;
+    GtkWidget *icon;
+    GtkWidget *label;
+
+    row = gtk_event_box_new();
+    pill = gtk_event_box_new();
+    pill_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    content = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    indicator = gtk_event_box_new();
+    icon_frame = gtk_event_box_new();
+    icon = gtk_image_new_from_icon_name(item->icon_name, GTK_ICON_SIZE_LARGE_TOOLBAR);
+    label = gtk_label_new(item->title);
+
+    gtk_event_box_set_visible_window(GTK_EVENT_BOX(row), FALSE);
+    gtk_event_box_set_visible_window(GTK_EVENT_BOX(pill), TRUE);
+    gtk_event_box_set_visible_window(GTK_EVENT_BOX(indicator), TRUE);
+    gtk_event_box_set_visible_window(GTK_EVENT_BOX(icon_frame), TRUE);
+    gtk_widget_add_events(row, GDK_BUTTON_PRESS_MASK | GDK_ENTER_NOTIFY_MASK | GDK_LEAVE_NOTIFY_MASK);
+    gtk_widget_set_app_paintable(pill, TRUE);
+    gtk_widget_set_app_paintable(indicator, TRUE);
+    gtk_widget_set_app_paintable(icon_frame, TRUE);
+    gtk_widget_set_halign(pill, GTK_ALIGN_FILL);
+    gtk_widget_set_valign(pill, GTK_ALIGN_FILL);
+    gtk_widget_set_halign(pill_box, GTK_ALIGN_FILL);
+    gtk_widget_set_valign(pill_box, GTK_ALIGN_FILL);
+    gtk_widget_set_halign(content, GTK_ALIGN_FILL);
+    gtk_widget_set_valign(content, GTK_ALIGN_CENTER);
+    gtk_widget_set_halign(indicator, GTK_ALIGN_START);
+    gtk_widget_set_valign(indicator, GTK_ALIGN_CENTER);
+    gtk_widget_set_halign(icon_frame, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(icon_frame, GTK_ALIGN_CENTER);
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+    gtk_widget_set_size_request(row, -1, 58);
+    gtk_widget_set_margin_top(row, 6);
+    gtk_widget_set_margin_bottom(row, 6);
+    gtk_widget_set_margin_start(row, 6);
+    gtk_widget_set_margin_end(row, 6);
+    gtk_widget_set_margin_top(content, 10);
+    gtk_widget_set_margin_bottom(content, 10);
+    gtk_widget_set_margin_start(content, 14);
+    gtk_widget_set_margin_end(content, 14);
+    gtk_widget_set_margin_top(pill_box, 2);
+    gtk_widget_set_margin_bottom(pill_box, 2);
+    gtk_widget_set_size_request(icon_frame, 34, 34);
+    gtk_widget_set_size_request(indicator, 4, 34);
+
+    dc_app_add_css_class(row, "dc-sidebar-row");
+    dc_app_add_css_class(content, "dc-sidebar-row-box");
+    dc_app_add_css_class(icon, "dc-sidebar-icon");
+    dc_app_add_css_class(label, "dc-sidebar-label");
+
+    g_signal_connect(pill, "draw", G_CALLBACK(dc_app_draw_sidebar_pill), NULL);
+    g_signal_connect(indicator, "draw", G_CALLBACK(dc_app_draw_sidebar_indicator), NULL);
+    g_signal_connect(icon_frame, "draw", G_CALLBACK(dc_app_draw_sidebar_icon_frame), NULL);
+
+    gtk_container_add(GTK_CONTAINER(icon_frame), icon);
+    gtk_box_pack_start(GTK_BOX(pill_box), indicator, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(content), icon_frame, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(content), label, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(pill_box), content, TRUE, TRUE, 0);
+    gtk_container_add(GTK_CONTAINER(pill), pill_box);
+    gtk_container_add(GTK_CONTAINER(row), pill);
+    g_object_set_data_full(G_OBJECT(row), "dc-stack-name", g_strdup(item->name), g_free);
+    g_object_set_data(G_OBJECT(row), "dc-sidebar-pill", pill);
+    g_object_set_data(G_OBJECT(row), "dc-sidebar-indicator", indicator);
+    g_object_set_data(G_OBJECT(row), "dc-sidebar-icon-frame", icon_frame);
+    g_object_set_data(G_OBJECT(row), "dc-sidebar-icon", icon);
+    g_object_set_data(G_OBJECT(row), "dc-sidebar-label", label);
+
+    return row;
+}
+
+static void dc_app_set_sidebar_row_active(GtkWidget *row, gboolean active) {
+    GtkWidget *pill;
+    GtkWidget *indicator;
+    GtkWidget *icon_frame;
+    GtkWidget *icon;
+    GtkWidget *label;
+
+    if (row == NULL) {
+        return;
+    }
+
+    pill = g_object_get_data(G_OBJECT(row), "dc-sidebar-pill");
+    indicator = g_object_get_data(G_OBJECT(row), "dc-sidebar-indicator");
+    icon_frame = g_object_get_data(G_OBJECT(row), "dc-sidebar-icon-frame");
+    icon = g_object_get_data(G_OBJECT(row), "dc-sidebar-icon");
+    label = g_object_get_data(G_OBJECT(row), "dc-sidebar-label");
+
+    g_object_set_data(G_OBJECT(pill), "dc-active", GINT_TO_POINTER(active));
+    g_object_set_data(G_OBJECT(indicator), "dc-active", GINT_TO_POINTER(active));
+    g_object_set_data(G_OBJECT(icon_frame), "dc-active", GINT_TO_POINTER(active));
+
+    if (active) {
+        dc_app_add_css_class(icon, "dc-sidebar-icon-active");
+        dc_app_add_css_class(label, "dc-sidebar-label-active");
+    } else {
+        gtk_style_context_remove_class(gtk_widget_get_style_context(icon), "dc-sidebar-icon-active");
+        gtk_style_context_remove_class(gtk_widget_get_style_context(label), "dc-sidebar-label-active");
+    }
+
+    gtk_widget_queue_draw(pill);
+    gtk_widget_queue_draw(indicator);
+    gtk_widget_queue_draw(icon_frame);
+}
+
+static void dc_app_select_sidebar_row(DcAppController *app, const char *visible_name) {
+    GList *children;
+
+    if (app == NULL || app->sidebar_list == NULL || visible_name == NULL) {
+        return;
+    }
+
+    children = gtk_container_get_children(GTK_CONTAINER(app->sidebar_list));
+    for (GList *iter = children; iter != NULL; iter = iter->next) {
+        GtkWidget *row = GTK_WIDGET(iter->data);
+        const char *row_name = g_object_get_data(G_OBJECT(row), "dc-stack-name");
+        gboolean is_active = g_strcmp0(row_name, visible_name) == 0;
+
+        dc_app_set_sidebar_row_active(row, is_active);
+    }
+    g_list_free(children);
+}
+
+static gboolean on_sidebar_row_button_press(GtkWidget *widget, GdkEventButton *event, gpointer user_data) {
+    DcAppController *app = user_data;
+    const char *page_name;
+
+    (void) event;
+
+    if (app == NULL || widget == NULL || app->stack == NULL) {
+        return FALSE;
+    }
+
+    page_name = g_object_get_data(G_OBJECT(widget), "dc-stack-name");
+    if (page_name != NULL) {
+        gtk_stack_set_visible_child_name(GTK_STACK(app->stack), page_name);
+    }
+
+    return TRUE;
+}
+
+static void on_stack_visible_child_changed(GObject *object, GParamSpec *pspec, gpointer user_data) {
+    DcAppController *app = user_data;
+    const char *visible_name;
+
+    (void) object;
+    (void) pspec;
+
+    if (app == NULL || app->stack == NULL) {
+        return;
+    }
+
+    visible_name = gtk_stack_get_visible_child_name(GTK_STACK(app->stack));
+    dc_app_select_sidebar_row(app, visible_name);
+}
+
 static void activate(GtkApplication *gtk_app, gpointer user_data) {
     DcAppController *app = user_data;
     GtkWidget *root_box;
     GtkWidget *main_content_box;
     GtkWidget *headerbar;
     GtkWidget *sidebar;
+    GtkWidget *sidebar_scroller;
     GtkWidget *stack_frame;
 
     app->preview = dc_preview_canvas_new();
@@ -133,14 +470,27 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_stack_set_transition_type(GTK_STACK(app->stack), GTK_STACK_TRANSITION_TYPE_CROSSFADE);
     gtk_stack_set_transition_duration(GTK_STACK(app->stack), 220);
 
-    sidebar = gtk_stack_sidebar_new();
-    gtk_stack_sidebar_set_stack(GTK_STACK_SIDEBAR(sidebar), GTK_STACK(app->stack));
-    gtk_widget_set_size_request(sidebar, 180, -1);
+    sidebar = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    sidebar_scroller = gtk_scrolled_window_new(NULL, NULL);
+    app->sidebar_list = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_size_request(sidebar, 260, -1);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sidebar_scroller),
+                                   GTK_POLICY_NEVER,
+                                   GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_overlay_scrolling(GTK_SCROLLED_WINDOW(sidebar_scroller), FALSE);
+    gtk_widget_set_margin_top(sidebar, 8);
+    gtk_widget_set_margin_bottom(sidebar, 8);
+    gtk_widget_set_margin_start(sidebar, 4);
+    gtk_widget_set_margin_end(sidebar, 6);
+    gtk_container_add(GTK_CONTAINER(sidebar_scroller), app->sidebar_list);
+    gtk_box_pack_start(GTK_BOX(sidebar), sidebar_scroller, TRUE, TRUE, 0);
     
     headerbar = dc_custom_headerbar_new(GTK_WINDOW(app->window), "Settings", NULL);
 
     dc_app_add_css_class(root_box, "app-shell");
     dc_app_add_css_class(sidebar, "dc-sidebar");
+    dc_app_add_css_class(sidebar_scroller, "dc-sidebar-scroller");
+    dc_app_add_css_class(app->sidebar_list, "dc-sidebar-list");
     dc_app_add_css_class(stack_frame, "content-card");
 
     gtk_container_add(GTK_CONTAINER(app->window), root_box);
@@ -215,6 +565,18 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
                          dc_ethernet_page_get_widget(app->ethernet_page),
                          "ethernet",
                          "Ethernet");
+
+    for (gsize i = 0; i < G_N_ELEMENTS(DC_SIDEBAR_ITEMS); i++) {
+        GtkWidget *row = dc_app_create_sidebar_row(&DC_SIDEBAR_ITEMS[i]);
+        g_signal_connect(row, "button-press-event",
+                         G_CALLBACK(on_sidebar_row_button_press), app);
+        gtk_box_pack_start(GTK_BOX(app->sidebar_list), row, FALSE, FALSE, 0);
+    }
+
+    g_signal_connect(app->stack, "notify::visible-child-name",
+                     G_CALLBACK(on_stack_visible_child_changed), app);
+    gtk_stack_set_visible_child_name(GTK_STACK(app->stack), "wifi");
+    dc_app_select_sidebar_row(app, "wifi");
 
     dc_app_connect_display_page_signals(app);
     gtk_widget_show_all(app->window);
