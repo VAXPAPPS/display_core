@@ -186,8 +186,8 @@ static const char *const DC_APP_THEME_CSS_PARTS[] = {
     ".dc-sidebar-icon-active { color: rgba(111, 225, 255, 0.98); }\n",
     ".dc-sidebar-label { color: rgba(255, 255, 255, 0.90); font-size: 15px; font-weight: 800; letter-spacing: 0.3px; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.24); }\n",
     ".dc-sidebar-label-active { color: rgba(255, 255, 255, 0.98); }\n",
-    ".dc-sidebar scrollbar { background: transparent; border: none; }\n",
-    ".dc-sidebar scrollbar slider { background-color: rgba(255, 255, 255, 0.10); border-radius: 999px; min-width: 6px; min-height: 24px; }\n"
+    ".dc-sidebar scrollbar { background: transparent; border: none; opacity: 0; min-width: 0; min-height: 0; }\n",
+    ".dc-sidebar scrollbar slider { background-color: transparent; border: none; min-width: 0; min-height: 0; }\n"
 };
 
 static const DcSidebarItem DC_SIDEBAR_ITEMS[] = {
@@ -477,7 +477,8 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sidebar_scroller),
                                    GTK_POLICY_NEVER,
                                    GTK_POLICY_AUTOMATIC);
-    gtk_scrolled_window_set_overlay_scrolling(GTK_SCROLLED_WINDOW(sidebar_scroller), FALSE);
+    gtk_scrolled_window_set_overlay_scrolling(GTK_SCROLLED_WINDOW(sidebar_scroller), TRUE);
+    gtk_widget_hide(gtk_scrolled_window_get_vscrollbar(GTK_SCROLLED_WINDOW(sidebar_scroller)));
     gtk_widget_set_margin_top(sidebar, 8);
     gtk_widget_set_margin_bottom(sidebar, 8);
     gtk_widget_set_margin_start(sidebar, 4);
