@@ -87,7 +87,7 @@ void dc_app_display_edit_configure_capabilities(DcAppController *app) {
     const char *status_text;
 
     vrr_switch = dc_display_edit_page_get_vrr_switch(app->display_edit_page);
-    if (!dc_xrandr_service_get_vrr_support_info(app->service, &vrr_info, &error_message)) {
+    if (!dc_display_backend_get_vrr_support_info(app->backend, &vrr_info, &error_message)) {
         gtk_widget_set_sensitive(vrr_switch, FALSE);
         gtk_widget_set_tooltip_text(vrr_switch, "Variable Refresh Rate support could not be queried.");
         gtk_label_set_text(GTK_LABEL(dc_display_edit_page_get_vrr_status_label(app->display_edit_page)),
@@ -174,7 +174,7 @@ void dc_app_display_edit_load(DcAppController *app) {
 
     if (dc_display_edit_config_load(&config, &error_message)) {
         apply_display_edit_config_to_ui(app, config);
-        dc_xrandr_service_apply_display_edit(app->service, config, NULL);
+        dc_display_backend_apply_display_edit(app->backend, config, NULL);
         dc_display_edit_config_free(config);
         app->suppress_display_edit_autosave = FALSE;
         return;
@@ -200,7 +200,7 @@ static void on_display_edit_save(DcAppController *app) {
 
     g_free(error_message);
     error_message = NULL;
-    if (!dc_xrandr_service_apply_display_edit(app->service, config, &error_message)) {
+    if (!dc_display_backend_apply_display_edit(app->backend, config, &error_message)) {
         g_warning("%s", error_message != NULL ? error_message : "Failed to apply display edit config.");
     }
 
@@ -219,7 +219,7 @@ gboolean dc_app_display_edit_refresh_runtime(gpointer user_data) {
         return G_SOURCE_CONTINUE;
     }
 
-    if (!dc_xrandr_service_apply_display_edit(app->service, config, &error_message)) {
+    if (!dc_display_backend_apply_display_edit(app->backend, config, &error_message)) {
         g_warning("%s", error_message != NULL ? error_message : "Failed to refresh display edit state.");
     }
 

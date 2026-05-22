@@ -1,17 +1,36 @@
 CC := gcc
-CFLAGS := -Wall -Wextra -Wpedantic -std=c11 -Iinclude -I. $(shell pkg-config --cflags gtk+-3.0 gio-2.0 xrandr x11 libpulse)
-LDLIBS := $(shell pkg-config --libs gtk+-3.0 gio-2.0 xrandr x11 libpulse) -lm
+WAYLAND_SCANNER := wayland-scanner
+
+# ملف بروتوكول WLR Output Management
+WLR_PROTOCOL_XML  := wlr-output-management-unstable-v1.xml
+WLR_PROTOCOL_H    := include/services/wlr-output-management-unstable-v1-client-protocol.h
+WLR_PROTOCOL_C    := src/services/wlr-output-management-unstable-v1-protocol.c
+
+CFLAGS := -Wall -Wextra -Wpedantic -std=c11 -Iinclude -I. \
+          $(shell pkg-config --cflags gtk+-3.0 gio-2.0 xrandr x11 libpulse wayland-client)
+LDLIBS := $(shell pkg-config --libs gtk+-3.0 gio-2.0 xrandr x11 libpulse wayland-client) -lm
 
 TARGET := display-settings
 THEME_DAEMON_TARGET := vaxp-theme-daemon
 THEME_TESTER_TARGET := vaxp-theme-tester
-SRC := $(wildcard src/*.c src/app/*.c src/domain/*.c src/services/*.c src/ui/*.c src/ui/pages/*.c)
+SRC := $(wildcard src/*.c src/app/*.c src/domain/*.c src/services/*.c src/ui/*.c src/ui/pages/*.c) \
+       $(WLR_PROTOCOL_C)
 BUILD_DIR := build
 OBJ := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SRC))
 
-.PHONY: all clean run theme-daemon theme-client-check theme-tester
+.PHONY: all clean run theme-daemon theme-client-check theme-tester generate-protocol
 
-all: $(TARGET)
+generate-protocol: $(WLR_PROTOCOL_H) $(WLR_PROTOCOL_C)
+
+$(WLR_PROTOCOL_H): $(WLR_PROTOCOL_XML)
+	@mkdir -p $(dir $@)
+	$(WAYLAND_SCANNER) client-header $< $@
+
+$(WLR_PROTOCOL_C): $(WLR_PROTOCOL_XML)
+	@mkdir -p $(dir $@)
+	$(WAYLAND_SCANNER) private-code $< $@
+
+all: $(WLR_PROTOCOL_H) $(WLR_PROTOCOL_C) $(TARGET)
 
 $(TARGET): $(OBJ)
 	$(CC) $(OBJ) -o $@ $(LDLIBS)
@@ -26,7 +45,7 @@ $(THEME_TESTER_TARGET): vaxp_theme_tester.c
 		$$(pkg-config --cflags --libs gtk+-3.0 gio-2.0) \
 		-o $(THEME_TESTER_TARGET)
 
-$(BUILD_DIR)/%.o: src/%.c
+$(BUILD_DIR)/%.o: src/%.c $(WLR_PROTOCOL_H)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -43,4 +62,5 @@ theme-client-check: vaxp_theme_client.c vaxp_theme_client.h vaxp_theme_protocol.
 theme-tester: $(THEME_TESTER_TARGET)
 
 clean:
-	rm -rf $(BUILD_DIR) $(TARGET) $(THEME_DAEMON_TARGET) $(THEME_TESTER_TARGET)
+	rm -rf $(BUILD_DIR) $(TARGET) $(THEME_DAEMON_TARGET) $(THEME_TESTER_TARGET) \
+	       $(WLR_PROTOCOL_H) $(WLR_PROTOCOL_C)

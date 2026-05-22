@@ -617,8 +617,8 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
 static DcAppController *dc_app_controller_new(char **error_message) {
     DcAppController *app = g_new0(DcAppController, 1);
 
-    app->service = dc_xrandr_service_new(error_message);
-    if (app->service == NULL) {
+    app->backend = dc_display_backend_new(error_message);
+    if (app->backend == NULL) {
         g_free(app);
         return NULL;
     }
@@ -714,8 +714,8 @@ static void dc_app_controller_free(DcAppController *app) {
         g_object_unref(app->gtk_app);
     }
 
-    if (app->service != NULL) {
-        dc_xrandr_service_free(app->service);
+    if (app->backend != NULL) {
+        dc_display_backend_free(app->backend);
     }
     if (app->power_service != NULL) {
         g_object_unref(app->power_service);

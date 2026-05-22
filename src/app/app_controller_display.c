@@ -161,7 +161,7 @@ void dc_app_reload_outputs(DcAppController *app) {
     dc_app_clear_rows(app);
     dc_app_set_status(app, "Refreshing outputs...");
 
-    if (!dc_xrandr_service_load_outputs(app->service, &loaded_outputs, &error_message)) {
+    if (!dc_display_backend_load_outputs(app->backend, &loaded_outputs, &error_message)) {
         dc_app_set_status(app, error_message != NULL ? error_message : "Failed to load outputs.");
         g_free(error_message);
         return;
@@ -457,7 +457,7 @@ static gboolean confirm_or_revert(DcAppController *app, GPtrArray *previous_conf
         return TRUE;
     }
 
-    if (!dc_xrandr_service_apply_configs(app->service, previous_configs, &error_message)) {
+    if (!dc_display_backend_apply_configs(app->backend, previous_configs, &error_message)) {
         dc_app_set_status(app, error_message != NULL ? error_message : "Failed to revert display settings.");
         g_free(error_message);
         return FALSE;
@@ -497,7 +497,7 @@ static void on_apply_clicked(GtkButton *button, gpointer user_data) {
 
     configs = collect_current_configs(app);
 
-    success = dc_xrandr_service_apply_configs(app->service, configs, &error_message);
+    success = dc_display_backend_apply_configs(app->backend, configs, &error_message);
     if (success) {
         dc_app_reload_outputs(app);
         confirm_or_revert(app, previous_configs);

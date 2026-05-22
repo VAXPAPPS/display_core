@@ -3,7 +3,7 @@
 
 #include <gtk/gtk.h>
 
-#include "services/xrandr_service.h"
+#include "services/display_backend.h"
 #include "ui/custom_headerbar.h"
 #include "ui/output_row.h"
 #include "ui/pages/audio_page.h"
@@ -35,7 +35,7 @@
 #define DC_FALLBACK_VENOM_CONFIG_PATH "/etc/venom/venom.conf"
 
 typedef struct {
-    DcXrandrService *service;
+    DcDisplayBackend *backend;
     GtkApplication *gtk_app;
     GtkWidget *window;
     GtkWidget *stack;
