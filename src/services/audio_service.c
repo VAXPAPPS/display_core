@@ -126,7 +126,7 @@ gboolean dc_audio_service_init(char **error_message) {
     }
 
     pa_threaded_mainloop_lock(pa_ml);
-    pa_ctx = pa_context_new(pa_threaded_mainloop_get_api(pa_ml), "display-settings");
+    pa_ctx = pa_context_new(pa_threaded_mainloop_get_api(pa_ml), "settingsx");
     if (!pa_ctx) {
         pa_threaded_mainloop_unlock(pa_ml);
         set_error(error_message, "Failed to create PulseAudio context");

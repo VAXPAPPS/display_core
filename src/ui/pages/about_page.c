@@ -94,8 +94,8 @@ static GtkWidget *create_card(void) {
 static const char *find_logo_path(void) {
     static char logo_path[512];
     const char *paths[] = {
-        "assets/logo.png",
-        "/usr/share/vsysinfo/logo.png"
+        "assets/settingsx.svg",
+        "/usr/share/vsysinfo/settingsx.svg"
     };
     
     for (int i = 0; i < 2; i++) {

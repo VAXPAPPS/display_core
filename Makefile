@@ -10,7 +10,7 @@ CFLAGS := -Wall -Wextra -Wpedantic -std=c11 -Iinclude -I. \
           $(shell pkg-config --cflags gtk+-3.0 gio-2.0 xrandr x11 libpulse wayland-client)
 LDLIBS := $(shell pkg-config --libs gtk+-3.0 gio-2.0 xrandr x11 libpulse wayland-client) -lm
 
-TARGET := display-settings
+TARGET := settingsx
 THEME_DAEMON_TARGET := vaxp-theme-daemon
 THEME_TESTER_TARGET := vaxp-theme-tester
 SRC := $(wildcard src/*.c src/app/*.c src/domain/*.c src/services/*.c src/ui/*.c src/ui/pages/*.c) \
@@ -19,6 +19,8 @@ BUILD_DIR := build
 OBJ := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SRC))
 
 .PHONY: all clean run theme-daemon theme-client-check theme-tester generate-protocol
+
+all: $(WLR_PROTOCOL_H) $(WLR_PROTOCOL_C) $(TARGET)
 
 generate-protocol: $(WLR_PROTOCOL_H) $(WLR_PROTOCOL_C)
 
@@ -29,8 +31,6 @@ $(WLR_PROTOCOL_H): $(WLR_PROTOCOL_XML)
 $(WLR_PROTOCOL_C): $(WLR_PROTOCOL_XML)
 	@mkdir -p $(dir $@)
 	$(WAYLAND_SCANNER) private-code $< $@
-
-all: $(WLR_PROTOCOL_H) $(WLR_PROTOCOL_C) $(TARGET)
 
 $(TARGET): $(OBJ)
 	$(CC) $(OBJ) -o $@ $(LDLIBS)

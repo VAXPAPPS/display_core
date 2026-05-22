@@ -30,7 +30,7 @@ make
 ## التشغيل
 
 ```bash
-./display-settings
+./settingsx
 ```
 
 ## ملاحظات
