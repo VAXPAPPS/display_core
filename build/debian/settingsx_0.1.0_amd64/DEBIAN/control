@@ -1,0 +1,9 @@
+Package: settingsx
+Version: 0.1.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: VAXP OS Developer <developer@vaxp.org>
+Depends: libgtk-3-0, libglib2.0-0, libxrandr2, libx11-6, libpulse0, libwayland-client0
+Description: SettingsX system settings manager
+ SettingsX is a lightweight, elegant settings daemon and control panel for VAXP OS.

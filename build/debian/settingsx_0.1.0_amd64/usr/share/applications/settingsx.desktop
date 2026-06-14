@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=SettingsX
+Comment=System Settings Manager
+Comment[ar]=مدير إعدادات النظام
+Exec=settingsx
+Icon=settingsx
+Terminal=false
+Type=Application
+Categories=Settings;DesktopSettings;GTK;
+StartupNotify=true

@@ -1,4 +1,4 @@
-# Display Core
+# SettingsX
 
 تطبيق بسيط لإعدادات الشاشة على X11 باستخدام `C` و `GTK3` و `XRandR`.
 

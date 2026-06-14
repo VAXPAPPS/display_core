@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+if [ "$1" = "configure" ]; then
+    # Update desktop launcher cache
+    update-desktop-database -q || true
+    # Update system icon cache
+    gtk-update-icon-cache -tf /usr/share/icons/hicolor || true
+fi

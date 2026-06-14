@@ -13,8 +13,8 @@ LDLIBS := $(shell pkg-config --libs gtk+-3.0 gio-2.0 xrandr x11 libpulse wayland
 TARGET := settingsx
 THEME_DAEMON_TARGET := vaxp-theme-daemon
 THEME_TESTER_TARGET := vaxp-theme-tester
-SRC := $(wildcard src/*.c src/app/*.c src/domain/*.c src/services/*.c src/ui/*.c src/ui/pages/*.c) \
-       $(WLR_PROTOCOL_C)
+SRC := $(sort $(wildcard src/*.c src/app/*.c src/domain/*.c src/services/*.c src/ui/*.c src/ui/pages/*.c) \
+       $(WLR_PROTOCOL_C))
 BUILD_DIR := build
 OBJ := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SRC))
 

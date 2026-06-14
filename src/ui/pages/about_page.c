@@ -95,10 +95,11 @@ static const char *find_logo_path(void) {
     static char logo_path[512];
     const char *paths[] = {
         "assets/settingsx.svg",
+        "/usr/share/settingsx/settingsx.svg",
         "/usr/share/vsysinfo/settingsx.svg"
     };
     
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 3; i++) {
         if (access(paths[i], F_OK) == 0) {
             strncpy(logo_path, paths[i], sizeof(logo_path) - 1);
             logo_path[sizeof(logo_path) - 1] = '\0';
